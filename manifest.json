@@ -1,0 +1,9 @@
+{
+  "id": "reader-plugin",
+  "name": "Reader Plugin",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Book reading context and notes for a local AI-assisted reading workflow.",
+  "author": "Andy Spike",
+  "isDesktopOnly": true
+}
