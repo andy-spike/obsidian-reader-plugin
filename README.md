@@ -30,6 +30,10 @@ obsidian vault="Reader Plugin Dev - reader-plugin" commands filter=reader-plugin
 
 Use the worktree's vault name when checking another branch. The plugin makes no model calls at this stage.
 
+## Commits
+
+Agents should commit each completed unit of work, such as a verified fix or a finished feature. Commit often, keeping each commit focused so the history clearly records progress.
+
 ## Git worktrees
 
 [Worktrunk setup and workflow](docs/worktrunk.md) follows Bia's branch layout, lifecycle hooks, and commit-preserving merges. A new worktree installs dependencies, builds its own vault, and starts a background watcher. The removal hook stops the watcher, and the merge hook runs the checked build.
