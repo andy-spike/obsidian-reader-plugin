@@ -34,6 +34,10 @@ Use the matching vault name when checking another checkout. The plugin makes no 
 
 Agents should commit each completed unit of work, such as a verified fix or a finished feature. Commit often, keeping each commit focused so the history clearly records progress.
 
+## Worktrees
+
+Worktrees are created through T3 Code. When T3 creates a worktree for this project, it runs the project's **Worktree setup** script (`pnpm install --frozen-lockfile && pnpm build`), which installs dependencies and builds the worktree's own development vault. Start the **Dev watcher** script (`pnpm dev`) from T3 when you want rebuilds on save. Register the worktree's vault in Obsidian once before using `pnpm dev:open` there. New worktrees start from `origin/main`, so push `main` first.
+
 ## References
 
 The build follows Obsidian's [plugin development guide](https://docs.obsidian.md/Plugins/Getting%20started/Build%20a%20plugin) and [sample plugin](https://github.com/obsidianmd/obsidian-sample-plugin). The source stays separate from the disposable vault so each checkout can run its own build.
