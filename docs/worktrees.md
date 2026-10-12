@@ -29,7 +29,7 @@ Use a session handoff so T3 updates the agent's workspace binding. A terminal `c
 1. Check `t3_worktree_status`. If the session already has a task worktree, continue there. Handoff cannot move an already attached session a second time.
 2. Check root Git status and the task branch name. Commit completed prerequisite changes separately. Leave unrelated user changes out of task commits. Worktrees include committed files, so pending root edits are not carried over.
 3. Call `t3_worktree_handoff` with a unique task branch, `baseRef: "main"`, `startFromOrigin: false`, `path` set to `<project-root>/.wortrees/<sanitized-branch>`, and `runSetupScript: true`. Include the remaining task and verification steps in `continuationPrompt`. Make this the last action of the turn. T3 queues a new turn in the worktree with the conversation preserved.
-4. In the resumed turn, verify the branch and path, inspect the setup result, and wait for setup to succeed before editing. If setup fails, fix the cause and rerun `pnpm worktree:setup` in the task checkout.
+4. In the resumed turn, verify the branch and path, then run `pnpm worktree:setup` in the task checkout and require success before editing. This also handles a handoff that resumes before setup finishes or fails to start its setup terminal. If a T3 setup process is still running, wait for it to finish before rerunning the command. If setup fails, fix the cause and rerun it.
 
 The saved T3 **Worktree setup** project script is `pnpm worktree:setup`, with **Run on worktree create** enabled and background execution disabled. It invokes the same `pre-start` hooks that `wt switch` uses. The script connects T3's creation process to Worktrunk's project automation.
 
@@ -66,6 +66,14 @@ Codex reads `AGENTS.md`. Claude Code imports that file through `CLAUDE.md`, so b
 The `pre-merge` hook currently runs `pnpm build`, including TypeScript checking. Extend it with the project's required test command when the implementation introduces a test suite. Each checkout has its own generated vault; see the README for runtime checks and Obsidian registration.
 
 Merging does not move a T3 session back to the root. It stays attached to the retained checkout. Start the next independent task in a root session or a separately requested thread. Remove retained worktrees only when requested, using `wt remove <branch>`. T3 or Herdr merge buttons that remove the checkout do not implement this workflow.
+
+## Verification on 2026-10-12
+
+Verified on Linux with Worktrunk 0.69.2, Git 2.55.0, Node.js 26.11.1, and pnpm 12.4.1. T3 handed this session from the root into `.wortrees/chore-worktree-verification` on `chore/worktree-verification`, based on local `main`, and resumed the conversation in that checkout. Setup artifacts were absent when the resumed turn began, so the agent explicitly ran the shared setup command. The resumed-session step above requires that check for future tasks.
+
+The include list copied 959 dependency files totaling 50.9 MiB. A copied TypeScript file had identical contents and a different inode from the root's file. Setup generated a separate vault with the deployed plugin, without copying the root's prototype vault files or `.env`. Rerunning setup preserved a modified task note and left the root's note unchanged. The temporary note change was restored.
+
+The `pre-merge` hook rejected an intentional TypeScript error with exit status 2. Local `main` and its source file remained unchanged. After restoring the task source, the same hook passed. The validation probe was temporary and is absent from the committed source.
 
 ## References
 
