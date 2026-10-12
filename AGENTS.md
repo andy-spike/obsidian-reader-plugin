@@ -4,7 +4,11 @@ Explain concepts and changes thoroughly.
 
 ## Worktrees
 
-Work on `main` in the repo root by default. When the user requests a worktree, create it through T3 Code, using `t3_thread_launch` with a `worktree` workspace strategy, and make every edit for that task in that worktree. Do not run `git worktree add` yourself; T3 would not bind the thread to it or run the project's setup script. Push `main` before creating a worktree, because new worktrees start from `origin/main`.
+Start sessions in the project root. Before editing files for an implementation task, create a task worktree under the root's `.wortrees/` directory and make all task edits there. Read `docs/worktrees.md` before creating or merging a worktree. Repository workflow setup can be performed in the root.
+
+In T3 Code, use `t3_worktree_status` and then `t3_worktree_handoff` to move the current session into its worktree, with an explicit path, `baseRef: "main"`, `startFromOrigin: false`, and a continuation prompt. For a separately requested thread, use `t3_thread_launch` with a `worktree` workspace strategy. T3 must own the workspace binding; shell creation or changing directory does not update it. Outside T3, use `wt switch --create <branch> --base main`. Wait for the shared setup hooks to succeed before editing.
+
+When the task is complete, validate it, commit only its changes with messages you write yourself, and run `wt merge main --no-squash --no-remove --no-commit` from the task worktree. Keep validation hooks enabled. Resolve conflicts or failed checks before reporting success. Verify that `main` contains the resulting task commits and rebuild the root's development vault. Preserve the task branch and checkout for manual cleanup unless the user requests removal. The current T3 session remains bound to the retained worktree after merging.
 
 ## Development vaults
 

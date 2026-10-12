@@ -50,7 +50,9 @@ Agents should commit each completed unit of work, such as a verified fix or a fi
 
 ## Worktrees
 
-Worktrees are created through T3 Code. When T3 creates a worktree for this project, it runs the project's **Worktree setup** script (`pnpm install --frozen-lockfile && pnpm build`), which installs dependencies and builds the worktree's own development vault. Start the **Dev watcher** script (`pnpm dev`) from T3 when you want rebuilds on save. Register the worktree's vault in Obsidian once before using `pnpm dev:open` there. New worktrees start from `origin/main`, so push `main` first.
+Task worktrees live under `.wortrees/` inside the main checkout. Agents start in the root, move into a task worktree based on local `main`, and merge completed work back with Worktrunk. Each merge preserves individual commits, the task branch, and its checkout. See [the worktree workflow](docs/worktrees.md) for T3 session handoff, terminal commands, machine configuration, and merge checks.
+
+T3's **Worktree setup** script runs `pnpm worktree:setup`, which invokes the shared Worktrunk setup hooks. They copy only `node_modules`, install from the frozen lockfile, and build the checkout's own development vault. Worktrunk runs the same hooks automatically when it creates a worktree. Start the **Dev watcher** script (`pnpm dev`) from T3 when you want rebuilds on save. Register each checkout's vault in Obsidian once before using `pnpm dev:open` there.
 
 ## References
 

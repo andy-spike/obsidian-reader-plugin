@@ -5,3 +5,5 @@ main.js.map
 .env
 .env.*
 *.log
+/.wortrees/
+/.worktrees/
