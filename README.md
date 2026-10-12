@@ -4,6 +4,10 @@ An Obsidian desktop plugin for reading EPUB and text PDF source documents, keepi
 
 The [product direction](docs/product-direction.md) summarizes the intended workflow. The [reading workflow plan](docs/reading-workflow-plan.md) records the latest product decisions and acceptance targets, the [glossary](CONTEXT.md) defines terms, and the [ADRs](docs/adr/) explain architectural choices. The workflow plan is not yet an approved implementation plan.
 
+## Planned reading assistant workflow
+
+The user will ask questions without choosing which passages to send. For a question about a selected passage, the plugin will supply that passage and nearby text. The reading assistant will use document tools to search, read more text, inspect the chapter list, and read highlights and passage notes. Questions about the whole source document will require evidence across chapters. Answers will include citations that open supporting passages. Chapter summaries are an improvement to test later. See the accepted [retrieval workflow](docs/reading-workflow-plan.md#retrieval). These capabilities are not implemented yet.
+
 ## Planned assistant integration
 
 The reading assistant will use the user's installed, unmodified Claude Code or Codex CLI, chosen per conversation. Each CLI handles its own sign-in; the plugin will not read credential files or collect subscription credentials. The plugin will own its CLI adapters without a harness library. End-user setup is intended to require Obsidian and the chosen CLI, without a separate Node.js or Git for Windows installation for the plugin.

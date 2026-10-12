@@ -1,6 +1,6 @@
 # Book retrieval for a reading assistant
 
-Researched October 12, 2026. This note supports implementation planning; its recommendations are proposals, not new settled product decisions.
+Researched October 12, 2026. The user subsequently accepted the approach of automatic passage context, document search and reading tools, chapter coverage for broad questions, and validation with both assistant CLIs. The accepted scope is recorded in the [reading workflow plan](../reading-workflow-plan.md#retrieval). This note preserves the research and wider proposals. Exact tool parameters, chapter summary generation, and other enhancements remain to be evaluated.
 
 The practical goal is to let the user ask a normal question while the plugin supplies the right parts of the open book. The agent needs access to the book through tools, and it needs a way to obtain both precise passages and broader chapter context. Having a large context window alone does not establish that it will answer reliably.
 

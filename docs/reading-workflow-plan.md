@@ -23,17 +23,34 @@ This document records the product interviews. Vocabulary is defined in the [glos
 
 - The assistant appears in a sidebar and answers questions about a selected passage or the whole source document.
 - It runs through the user's installed, unmodified assistant CLI: Claude Code or Codex. The user picks one per conversation, with a default in settings, and a conversation stays with the CLI that started it. Authentication belongs entirely to the CLI, and the plugin never collects credentials.
-- The plugin supplies document tools such as `search_book`, `read_section`, and `get_annotations`, which returns the current document's annotations only. Claude Code receives them through a local MCP server; Codex normally receives them as dynamic tools over app-server. Normal operation exposes document tools and optional web research, without shell or file-editing tools. The Codex exec fallback has weaker tool restrictions, described below and shown in the setup check. A per-conversation switch turns web research off.
+- The plugin supplies tools to search the source document, read passages and surrounding text, read the chapter list, and read highlights and passage notes. `get_annotations` returns the current document's annotations only. Claude Code receives them through a local MCP server; Codex normally receives them as dynamic tools over app-server. Normal operation exposes document tools and optional web research, without shell or file-editing tools. The Codex exec fallback has weaker tool restrictions, described below and shown in the setup check. A per-conversation switch turns web research off.
 - The assistant never changes annotations. A **Save as passage note** button lets the user keep an answer.
 - Answers cite document passages with links that open them, link outside sources, and label the assistant's own interpretation.
-- The assistant sees the whole document by default. Spoiler-safe mode, set per conversation, restricts every document tool to text before the furthest point read.
+- The reading assistant can access the whole source document by default through document tools. The plugin does not send the whole source document with every question. Spoiler-safe mode, set per conversation, restricts every document tool to text before the furthest point read.
 - Conversation records are stored for each document in the vault, next to the annotation record. Recent conversations resume the CLI session. Older ones remain readable and can be continued through a summary.
 
 ## Retrieval
 
-- Text is extracted with chapter and location labels.
-- Search is hybrid: a MiniSearch keyword index and a local embedding index, built with a small transformers.js model downloaded on first use, with results merged. Book text never leaves the machine for indexing.
+The user asks a question in the reading assistant sidebar. The user does not need to choose which passages to send or manage retrieval. The assistant CLI does the thinking; the plugin controls access to the source document and supplies the text. This approach was accepted after the [book retrieval research](./research/book-retrieval-methods.md).
+
+- The plugin extracts text locally and preserves chapter order and source locations.
+- Search combines a MiniSearch keyword index and a local embedding index. A small transformers.js model is downloaded on first use. Search results are merged. Source document text never leaves the machine for indexing.
 - Both indexes are derived data, cached in the plugin's data folder outside the vault, and can be rebuilt.
+- When the user asks about a selected passage, the plugin supplies that passage and nearby text automatically. It also identifies the source document and current chapter.
+- The reading assistant can search, read matching passages with surrounding text, and search again if the first results are insufficient. The plugin supplies the same retrieval capabilities to both assistant CLIs.
+- The initial document tools support four operations: search the source document, read a passage and its surrounding text, read the chapter list, and read the document's highlights and passage notes. Working names are `search_book`, `read_section`, `get_book_outline`, and `get_annotations`. Exact parameters remain implementation work.
+- Tool results have explicit size limits. Longer text is returned in parts, with a way to request the next part. Every source passage includes an evidence ID and a location that the Reader view can open.
+- A question about one passage starts with nearby text. A comparison between chapters requires evidence from each relevant chapter. A question about the whole source document requires the reading assistant to examine the chapter structure and gather evidence across the document. A few search matches are insufficient to establish coverage of the whole document.
+- Answers use original passages as evidence. A citation must open the source passage and that passage must support the associated claim. If evidence or chapter coverage is incomplete, the answer says so.
+- Spoiler-safe mode applies to every document tool, including passage expansion and annotations. It must also apply to chapter summaries if they are added. Summaries must not include information from beyond the furthest point read.
+
+### Chapter summaries to test
+
+Chapter summaries are an improvement to evaluate, not a required first implementation. They would help the reading assistant find information and prepare answers to broad questions. Original passages remain the evidence for citations. How summaries are generated, stored, and checked remains an implementation decision. If the assistant CLI generates summaries, that work sends the supplied text to its service and consumes the user's subscription usage.
+
+### First retrieval validation
+
+Before relying on this design, test it with both assistant CLIs. Use an original fixture source document and a long public-domain source document. Check questions about selected passages, comparisons between chapters, and questions about the whole source document. Confirm that the reading assistant obtains the necessary evidence through the document tools, can retrieve more text when needed, and returns citations that open supporting passages. Also check tool result sizes and spoiler boundaries. The research does not establish that the plugin already passes these checks.
 
 ## Failure behavior
 
@@ -46,7 +63,8 @@ This document records the product interviews. Vocabulary is defined in the [glos
 - A 500-page EPUB or text PDF opens within 2 seconds.
 - Indexing runs in the background without freezing Obsidian. Keyword search is ready within about 30 seconds, and embeddings within a few minutes.
 - A new highlight appears in the annotation file within 1 second.
-- Every citation in an answer opens the cited passage.
+- Every citation in an answer opens the cited passage, and that passage supports the associated claim.
+- Both assistant CLIs answer passage questions, comparisons between chapters, and questions about the whole source document using evidence supplied by document tools. Broad answers disclose incomplete coverage.
 - Spoiler-safe mode never returns text past the furthest point read.
 
 ## Assistant CLI integration
@@ -61,7 +79,7 @@ Both assistant CLIs sit behind one adapter interface implemented by the plugin, 
 
 ## Remaining implementation validation
 
-The product choices above are settled, but implementation must pin compatible dependency versions, define the annotation schema and storage paths, and verify extraction, passage locations, and performance in both formats. CLI protocol and tool restrictions need end-to-end checks, including the per-conversation web switch, startup detection, fallback behavior, session resumption, and Windows executable handling. These checks must preserve the rule that the plugin never reads subscription credentials.
+The product choices above are settled, but implementation must pin compatible dependency versions, define the annotation schema and storage paths, and verify extraction, passage locations, and performance in both formats. CLI protocol and tool restrictions need end-to-end checks, including the per-conversation web switch, startup detection, fallback behavior, session resumption, and Windows executable handling. Retrieval also needs the validation described above. If a conversation already contains text beyond a new spoiler boundary, the implementation must address that history before resuming it; future tool filtering alone is insufficient. These checks must preserve the rule that the plugin never reads subscription credentials.
 
 ## Release
 
