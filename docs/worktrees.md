@@ -1,6 +1,6 @@
 # Worktree workflow
 
-Start an agent in the main checkout, create a worktree for its task, and keep every task edit in that checkout. When the task is complete, merge it into local `main` with Worktrunk. Keep the branch and checkout available for review and manual cleanup. `.wortrees/` is the agreed directory name and is ignored by Git.
+Start an agent in the main checkout, create a worktree for its task, and keep every task edit in that checkout. When the task is complete, merge it into local `main` with Worktrunk. Remove the task checkout after verification succeeds and the worker finishes. Keep checkouts with failed checks or pending work. Keep merged branches unless branch deletion is requested. `.wortrees/` is the agreed directory name and is ignored by Git.
 
 ## Machine configuration
 
@@ -14,9 +14,10 @@ worktree-path = "{{ repo_path }}/.wortrees/{{ branch | sanitize }}"
 merge.squash = false
 merge.remove = false
 merge.commit = false
+remove.delete-branch = false
 ```
 
-For example, `feat/epub-reader` gets the path `.wortrees/feat-epub-reader`. Avoid branch names that sanitize to the same directory. Run `wt config show` to inspect the active configuration. The entry applies to this repository without changing defaults for other projects.
+For example, `feat/epub-reader` gets the path `.wortrees/feat-epub-reader`. Avoid branch names that sanitize to the same directory. Run `wt config show` to inspect the active configuration. The entry applies to this repository without changing defaults for other projects. `merge.remove = false` keeps the checkout through post-merge verification; the final cleanup step removes it separately. `remove.delete-branch = false` preserves the merged branch when the checkout is removed.
 
 Shared hooks live in `.config/wt.toml`. The blocking `pre-start` pipeline copies dependencies, installs with the frozen lockfile, and builds. `.worktreeinclude` limits copying to ignored `node_modules/`. The copy is independent of the main checkout's directory, and the install reconciles it with the task's lockfile. Source files, docs, and local Markdown issues are tracked, so Git supplies them. Setup generates build output and a fresh development vault. Keep private books and CLI credentials outside the repository.
 
@@ -61,11 +62,19 @@ Codex reads `AGENTS.md`. Claude Code imports that file through `CLAUDE.md`, so b
 
    Worktrunk rebases onto the latest local `main`, runs the `pre-merge` build check, and fast-forwards `main` only after validation succeeds. Rebase can change task commit hashes while preserving separate commits. Resolve conflicts and rerun the checks before retrying. Keep hooks enabled.
 4. Verify every resulting task commit is an ancestor of `main`, both checkouts have clean tracked files, and `git worktree list` still includes the task checkout and branch.
-5. Run `pnpm build` with the root checkout as the command's working directory. This refreshes the main development vault after the merge. Report the target branch, validation results, task commits, and retained checkout path.
+5. Run `pnpm build` and any required runtime checks with the root checkout as the command's working directory. This refreshes the main development vault after the merge. Require all checks to pass before cleanup.
+6. Wait for the worker to finish, save its result, and stop any task development watchers or other processes that still need the checkout. From the root checkout, remove the completed task worktree:
+
+   ```sh
+   wt remove feat/epub-reader --foreground --no-delete-branch
+   ```
+
+   Substitute the actual task branch. `--foreground` waits for deletion to finish. Keep removal hooks enabled. If removal reports pending changes, inspect them and preserve needed work before retrying. Use normal removal without force flags.
+7. Verify that the directory is gone and `git worktree list` no longer includes it. Confirm that the task commits are still on `main` and the merged branch remains. Report the target branch, validation results, task commits, and cleanup result. If checks fail or follow-up work remains, keep the checkout and report why cleanup is pending.
 
 The `pre-merge` hook currently runs `pnpm build`, including TypeScript checking. Extend it with the project's required test command when the implementation introduces a test suite. Each checkout has its own generated vault; see the README for runtime checks and Obsidian registration.
 
-Merging does not move a T3 session back to the root. It stays attached to the retained checkout. Start the next independent task in a root session or a separately requested thread. Remove retained worktrees only when requested, using `wt remove <branch>`. T3 or Herdr merge buttons that remove the checkout do not implement this workflow.
+Merging does not move a T3 session back to the root. It stays attached to its task checkout. In the coordinator workflow, the root coordinator performs cleanup after the worker finishes and verification succeeds. That worker thread is complete; if follow-up implementation is needed later, launch it in a new worktree. For a conversation that moved itself into a worktree, keep the checkout while that conversation is still being used and perform cleanup from a root session when it has finished. Use the command sequence above so post-merge verification finishes before cleanup.
 
 ## Verification on 2026-10-12
 
@@ -74,6 +83,8 @@ Verified on Linux with Worktrunk 0.69.2, Git 2.55.0, Node.js 26.11.1, and pnpm 1
 The include list copied 959 dependency files totaling 50.9 MiB. A copied TypeScript file had identical contents and a different inode from the root's file. Setup generated a separate vault with the deployed plugin, without copying the root's prototype vault files or `.env`. Rerunning setup preserved a modified task note and left the root's note unchanged. The temporary note change was restored.
 
 The `pre-merge` hook rejected an intentional TypeScript error with exit status 2. Local `main` and its source file remained unchanged. After restoring the task source, the same hook passed. The validation probe was temporary and is absent from the committed source.
+
+After the cleanup policy changed, a disposable local clone exercised Worktrunk creation, the shared setup hooks, a committed task, merge validation, and a successful build in the root. `wt remove <branch> --foreground --no-delete-branch` then removed the task directory and its worktree registration. The task commit remained on `main`, and the merged branch remained available. The test clone was removed after the checks. During this check the live verification checkout was kept because the conversation was still attached to it.
 
 ## References
 
