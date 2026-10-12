@@ -2,6 +2,8 @@
 
 This document records the product interviews. Vocabulary is defined in the [glossary](../CONTEXT.md), and decisions that are hard to reverse are recorded in [docs/adr](./adr/). It records the latest product decisions, acceptance targets, and remaining implementation validation. It is not yet an approved implementation plan.
 
+The published [reading assistant specification](../.scratch/book-context/spec.md) defines the production document-question requirements and confirmed testing seam. Implementation tasks and their dependencies are the next planning step.
+
 ## Scope of the first usable version
 
 - EPUB and text PDF source documents stored in the vault. Scanned PDFs and OCR are deferred, and a PDF without a text layer gets a clear message.
