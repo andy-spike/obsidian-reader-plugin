@@ -1,6 +1,6 @@
 ## Writing
 
-Explain concepts and changes thoroughly in clear English.
+Explain concepts and changes thoroughly.
 
 ## Worktrees
 
