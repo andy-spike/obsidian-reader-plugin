@@ -4,6 +4,8 @@ Researched October 12, 2026. The user subsequently accepted the approach of auto
 
 The practical goal is to let the user ask a normal question while the plugin supplies the right parts of the open book. The agent needs access to the book through tools, and it needs a way to obtain both precise passages and broader chapter context. Having a large context window alone does not establish that it will answer reliably.
 
+The subsequent [live prototype results](./book-context-prototype.md) record actual CLI/tool runs, an incomplete-context case and its follow-up, and the limits of the experiment. They support implementation feasibility, not a general answer-quality guarantee.
+
 ## What the evidence supports
 
 ### Long context is useful, but needs testing

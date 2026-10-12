@@ -52,6 +52,8 @@ Chapter summaries are an improvement to evaluate, not a required first implement
 
 Before relying on this design, test it with both assistant CLIs. Use an original fixture source document and a long public-domain source document. Check questions about selected passages, comparisons between chapters, and questions about the whole source document. Confirm that the reading assistant obtains the necessary evidence through the document tools, can retrieve more text when needed, and returns citations that open supporting passages. Also check tool result sizes and spoiler boundaries. The research does not establish that the plugin already passes these checks.
 
+An initial [live prototype](./research/book-context-prototype.md) completed these example cases with both assistant CLIs. It supports proceeding with the document-tool approach, but does not establish production acceptance. The specification must include guidance to find earlier definitions across permitted chapters, explicit pagination, useful handling of empty search queries, and disclosure of incomplete chapter coverage. Production extraction, retrieval quality, and Reader navigation still need validation.
+
 ## Failure behavior
 
 - A setup check shows the status of each assistant CLI: whether it was found and whether it is signed in. If something is missing, it tells the user which command to run in their own terminal, and it offers a setting for the executable's path.
@@ -80,6 +82,8 @@ Both assistant CLIs sit behind one adapter interface implemented by the plugin, 
 ## Remaining implementation validation
 
 The product choices above are settled, but implementation must pin compatible dependency versions, define the annotation schema and storage paths, and verify extraction, passage locations, and performance in both formats. CLI protocol and tool restrictions need end-to-end checks, including the per-conversation web switch, startup detection, fallback behavior, session resumption, and Windows executable handling. Retrieval also needs the validation described above. If a conversation already contains text beyond a new spoiler boundary, the implementation must address that history before resuming it; future tool filtering alone is insufficient. These checks must preserve the rule that the plugin never reads subscription credentials.
+
+The prototype found that Codex CLI 0.162.1 rejects `--ignore-user-config`. Ignoring unrelated user configuration remains a product requirement; the adapter must establish a supported way to do it. Explicit overrides in the prototype did not prove complete configuration isolation.
 
 ## Release
 
