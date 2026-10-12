@@ -1,6 +1,16 @@
 # Reader Plugin
 
-An Obsidian desktop plugin for a book reading and note-taking workflow. The initial scaffold has two commands to verify plugin loading and access to selected text. Book import, retrieval, MCP tools, and Claude Code integration are future work. The intended workflow is recorded in [Product direction](docs/product-direction.md).
+An Obsidian desktop plugin for reading EPUB and text PDF source documents, keeping highlights and passage notes, and asking a reading assistant questions. The implementation is an initial scaffold with two commands to verify plugin loading and access to selected Markdown text. The Reader view, annotation storage, local retrieval, and Claude Code and Codex integrations are planned and are not implemented yet.
+
+The [product direction](docs/product-direction.md) summarizes the intended workflow. The [reading workflow plan](docs/reading-workflow-plan.md) records the latest product decisions and acceptance targets, the [glossary](CONTEXT.md) defines terms, and the [ADRs](docs/adr/) explain architectural choices. The workflow plan is not yet an approved implementation plan.
+
+## Planned assistant integration
+
+The reading assistant will use the user's installed, unmodified Claude Code or Codex CLI, chosen per conversation. Each CLI handles its own sign-in; the plugin will not read credential files or collect subscription credentials. The plugin will own its CLI adapters without a harness library. End-user setup is intended to require Obsidian and the chosen CLI, without a separate Node.js or Git for Windows installation for the plugin.
+
+Claude Code will use a streaming process with the plugin's document tools supplied through a local MCP server and built-in tools limited to optional web research. Codex will normally use app-server with dynamic document tools and `environments: []` to remove shell and file tools. The planned Codex exec fallback uses MCP and delivers complete messages without streaming text. It cannot remove shell and file tools in the same way, so it relies on a read-only sandbox, automatically declined approval requests, ignored user configuration, disabled plugins and apps, and an empty working directory. The setup check will report the active mode and these differences. See [ADR 0003](docs/adr/0003-drive-the-users-own-assistant-clis.md).
+
+Indexing will run locally. Assistant requests send reading context and retrieved passages to the chosen CLI's service; optional web research also uses the network. The first-use embedding model download uses the network. The plugin will launch external CLI processes. These are planned behaviors, not capabilities of the current scaffold.
 
 ## Development
 
