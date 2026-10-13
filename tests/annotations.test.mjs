@@ -56,6 +56,38 @@ test("corrupt selectors are rejected without replacing the record", async () => 
   await assert.rejects(new AnnotationStore(disk.adapter).open("Book.pdf", hash), /Invalid/);
   assert.equal(JSON.parse(disk.files.get(path)).annotations[0].rects[0].x, 5);
 });
+test("custom color IDs are valid and Markdown headings use the color's name", async () => {
+  const disk = storage();
+  const store = new AnnotationStore(disk.adapter, { colorName: id => ({ "color-k1": "Key idea" })[id] ?? id });
+  const record = await store.open("Book.pdf", hash);
+  record.annotations.push({ ...annotation, color: "color-k1" });
+  await store.save(record);
+  assert.equal(parseRecord(disk.files.get(`Reader annotations/${record.documentId}.json`)).annotations[0].color, "color-k1");
+  assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /## Page 2 · Key idea/);
+  assert.throws(() => parseRecord(JSON.stringify({ ...record, annotations: [{ ...annotation, color: "not a color" }] })), /Invalid/);
+});
+test("relocating moves every record and export, and later saves use the new folder", async () => {
+  const files = new Map(); const folders = new Set();
+  const inFolder = (folder, path) => path.startsWith(folder + "/") && !path.slice(folder.length + 1).includes("/");
+  const adapter = {
+    exists: async path => files.has(path) || folders.has(path), mkdir: async path => { folders.add(path); },
+    list: async path => ({ files: [...files.keys()].filter(file => inFolder(path, file)) }), read: async path => files.get(path),
+    write: async (path, text) => { files.set(path, text); },
+  };
+  const store = new AnnotationStore(adapter);
+  const record = await store.open("Book.pdf", hash);
+  files.set("Reader annotations/notes.txt", "user file");
+  const moved = [];
+  const count = await store.relocate("Reading/Annotations", async (from, to) => { moved.push(to); files.set(to, files.get(from)); files.delete(from); });
+  assert.equal(count, 1);
+  assert.deepEqual(moved.sort(), [`Reading/Annotations/${record.documentId}.json`, `Reading/Annotations/${record.documentId}.md`]);
+  assert.equal(files.get("Reader annotations/notes.txt"), "user file");
+  record.annotations.push(annotation); await store.save(record);
+  assert.equal(parseRecord(files.get(`Reading/Annotations/${record.documentId}.json`)).annotations.length, 1);
+  assert.equal(files.has(`Reader annotations/${record.documentId}.json`), false);
+  const reopened = await new AnnotationStore(adapter, { folder: "Reading/Annotations" }).open("Book.pdf", hash);
+  assert.equal(reopened.documentId, record.documentId);
+});
 after(() => rm(directory, { recursive: true, force: true }));
 
 test("identical PDFs at existing paths have separate annotation identities", async () => {
