@@ -62,10 +62,28 @@ export function annotationMarkdown(record: AnnotationRecord): string {
 }
 
 /** One shared record per document and one write queue across all Reader leaves. */
+export type SaveState = { saving: boolean; error: string | null };
 export class AnnotationStore {
   private records = new Map<string, AnnotationRecord>();
   private queue: Promise<void> = Promise.resolve();
+  private listeners = new Set<(record: AnnotationRecord) => void>();
+  private states = new Map<string, SaveState>();
+  private revisions = new Map<string, number>();
+  private retries = new Map<string, ReturnType<typeof setTimeout>>();
+  private closed = false;
   constructor(private storage: Storage) {}
+  subscribe(listener: (record: AnnotationRecord) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  state(record: AnnotationRecord): SaveState { return this.states.get(record.documentId) ?? { saving: false, error: null }; }
+  private notify(record: AnnotationRecord): void { this.listeners.forEach(listener => listener(record)); }
+  dispose(): void {
+    this.closed = true;
+    this.retries.forEach(timer => clearTimeout(timer));
+    this.retries.clear();
+    this.listeners.clear();
+  }
   private serial<T>(action: () => Promise<T>): Promise<T> {
     const next = this.queue.then(action);
     this.queue = next.then(() => undefined, () => undefined);
@@ -95,7 +113,35 @@ export class AnnotationStore {
     });
   }
   save(record: AnnotationRecord): Promise<void> {
-    return this.serial(() => this.write(record));
+    const id = record.documentId;
+    const revision = (this.revisions.get(id) ?? 0) + 1;
+    this.revisions.set(id, revision);
+    clearTimeout(this.retries.get(id));
+    this.retries.delete(id);
+    this.states.set(id, { saving: true, error: null });
+    this.notify(record);
+    return this.serial(async () => {
+      if (this.revisions.get(id) !== revision) return;
+      try {
+        // Freeze one revision for both writes so comments typed during IO cannot split the exports.
+        const snapshot = JSON.parse(JSON.stringify(record)) as AnnotationRecord;
+        await this.write(snapshot);
+        if (this.revisions.get(id) === revision) {
+          this.states.set(id, { saving: false, error: null });
+          this.notify(record);
+        }
+      } catch (error) {
+        if (this.revisions.get(id) === revision) {
+          this.states.set(id, { saving: false, error: error instanceof Error ? error.message : String(error) });
+          this.notify(record);
+          if (!this.closed) this.retries.set(id, setTimeout(() => {
+            this.retries.delete(id);
+            void this.save(record).catch(() => {});
+          }, 2000));
+        }
+        throw error;
+      }
+    });
   }
   private async write(record: AnnotationRecord): Promise<void> {
     const path = `${ANNOTATION_FOLDER}/${record.documentId}`;
@@ -112,6 +158,7 @@ export class AnnotationStore {
           record.sourcePath = newPath + record.sourcePath.slice(oldPath.length);
           this.records.set(record.documentId, record);
           await this.write(record);
+          this.notify(record);
         }
       }
     });

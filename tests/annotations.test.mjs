@@ -76,3 +76,52 @@ test("folder renames update nested source paths without changing document IDs", 
   assert.equal(record.documentId, id);
   assert.match(disk.files.get(`Reader annotations/${id}.md`), /Reading\/Chapters\/Book.pdf/);
 });
+test("edits notify every subscriber immediately and saving state reflects the latest revision", async () => {
+  const disk = storage(); const store = new AnnotationStore(disk.adapter);
+  const record = await store.open("Book.pdf", hash);
+  const observed = []; const secondView = [];
+  const off = store.subscribe(r => observed.push({ comment: r.annotations[0]?.comment, ...store.state(r) }));
+  store.subscribe(r => secondView.push(r.annotations[0]?.comment));
+  record.annotations.push({ ...annotation, comment: "First edit" });
+  const first = store.save(record);
+  assert.equal(observed[0].comment, "First edit"); assert.equal(observed[0].saving, true);
+  record.annotations[0].comment = "Second edit";
+  const second = store.save(record);
+  assert.equal(secondView.at(-1), "Second edit");
+  await Promise.all([first, second]);
+  assert.equal(store.state(record).saving, false);
+  assert.equal(parseRecord(disk.files.get(`Reader annotations/${record.documentId}.json`)).annotations[0].comment, "Second edit");
+  assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /Second edit/);
+  off(); store.dispose();
+});
+test("a failed save retries automatically after the local write problem clears", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const disk = storage(); const store = new AnnotationStore(disk.adapter);
+  const record = await store.open("Book.pdf", hash);
+  record.annotations.push(annotation); disk.fail(".md");
+  await assert.rejects(store.save(record), /disk full/);
+  assert.equal(store.state(record).error, "disk full");
+  disk.fail("");
+  const saved = new Promise(resolve => store.subscribe(r => { if (!store.state(r).saving && !store.state(r).error) resolve(); }));
+  t.mock.timers.tick(2000);
+  await saved;
+  assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /My reading note/);
+  store.dispose();
+});
+test("JSON and Markdown use the same snapshot when a comment changes during IO", async () => {
+  const disk = storage(); const store = new AnnotationStore(disk.adapter);
+  const record = await store.open("Book.pdf", hash); record.annotations.push({ ...annotation, comment: "Before" });
+  const writes = []; const original = disk.adapter.write;
+  let editing = true;
+  disk.adapter.write = async (path, content) => {
+    writes.push({ path, content }); await original(path, content);
+    if (editing && path.endsWith(".json")) { editing = false; record.annotations[0].comment = "After"; void store.save(record); }
+  };
+  await store.save(record);
+  // Waiting on one more queued save also waits for the edit generated during the first JSON write.
+  await store.save(record);
+  assert.equal(JSON.parse(writes[0].content).annotations[0].comment, "Before");
+  assert.match(writes[1].content, /Before/);
+  assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /After/);
+  store.dispose();
+});
