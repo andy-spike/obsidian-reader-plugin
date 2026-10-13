@@ -1,6 +1,6 @@
 # Reading workflow plan
 
-This document records the product interviews, latest product decisions, architectural choices, acceptance targets, and remaining implementation validation. It is not yet an approved implementation plan.
+This document records the product interviews, latest product decisions, architectural choices, acceptance targets, and remaining implementation validation. It is not yet an approved implementation plan. The first PDF Reader and annotation phase is implemented; [the PDF reader guide](pdf-reader.md) documents its delivered behavior and remaining limits.
 
 ## Scope of the first usable version
 

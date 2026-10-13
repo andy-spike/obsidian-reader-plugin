@@ -9,13 +9,21 @@ const context = await esbuild.context({
   bundle: true,
   external: ["obsidian", "electron", ...builtinModules, ...builtinModules.map((name) => `node:${name}`)],
   format: "cjs",
-  target: "es2018",
+  target: "es2022",
   platform: "node",
   outfile: "main.js",
   sourcemap: production ? false : "inline",
   minify: production,
   logLevel: "info",
   plugins: [{
+    name: "inline-pdf-worker",
+    setup(build) {
+      build.onLoad({ filter: /pdf\.worker\.min\.mjs$/ }, async (args) => ({
+        contents: await (await import("node:fs/promises")).readFile(args.path, "utf8"),
+        loader: "text",
+      }));
+    },
+  }, {
     name: "deploy-to-dev-vault",
     setup(build) {
       build.onEnd(async (result) => {

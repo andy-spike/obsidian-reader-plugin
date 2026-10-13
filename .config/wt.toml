@@ -11,4 +11,4 @@ build = "pnpm build"
 
 # Run after Worktrunk rebases the task branch onto its merge target.
 [pre-merge]
-validate = "pnpm build"
+validate = "pnpm build && pnpm test"

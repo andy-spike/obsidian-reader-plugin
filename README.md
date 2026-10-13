@@ -1,8 +1,14 @@
 # Reader Plugin
 
-An Obsidian desktop plugin for reading EPUB and text PDF source documents, keeping highlights and passage notes, and asking a reading assistant questions. The implementation is an initial scaffold with two commands to verify plugin loading and access to selected Markdown text. The Reader view, annotation storage, local retrieval, and Claude Code and Codex integrations are planned and are not implemented yet.
+An Obsidian desktop plugin for reading EPUB and text PDF source documents, keeping highlights and passage notes, and asking a reading assistant questions. The PDF Reader opens vault PDFs with page navigation, zoom, text selection, highlights, and passage comments. Annotations save automatically to JSON records and generated Markdown notes in the vault. EPUB, local retrieval, and Claude Code and Codex integrations are planned and are not implemented yet.
 
 The [product direction](docs/product-direction.md) summarizes the intended workflow. The [reading workflow plan](docs/reading-workflow-plan.md) records the latest product decisions, architectural choices, and acceptance targets. The workflow plan is not yet an approved implementation plan.
+
+## PDF reading and annotations
+
+Run **Reader Plugin: Open PDF in Reader**, or right-click a vault PDF and choose **Open in Reader**. Select a passage, choose its highlight color, and click **Highlight** or **Highlight + comment**. The annotations panel lets you edit comments, jump to pages, delete highlights, and undo the latest deletion. Changes save automatically; **Save annotations** retries a failed save.
+
+Records and searchable Markdown exports live in `Reader annotations/`. Edit comments in the Reader panel and keep your own freeform writing in separate notes. The [PDF reader guide](docs/pdf-reader.md) documents the storage schema, rename behavior, limitations, and runtime checks. Plugin settings let you name each highlight color's meaning.
 
 ## Planned reading assistant workflow
 
@@ -42,7 +48,7 @@ obsidian vault="Reader Plugin Dev - reader-plugin" plugin:reload id=reader-plugi
 obsidian vault="Reader Plugin Dev - reader-plugin" commands filter=reader-plugin
 ```
 
-Use the matching vault name when checking another checkout. The plugin makes no model calls at this stage.
+Use the matching vault name when checking another checkout. The plugin makes no model calls at this stage. For the PDF workflow, open `Books/Sample reading book.pdf` with **Reader Plugin: Open PDF in Reader** and follow the [runtime verification steps](docs/pdf-reader.md#development-verification). Run `pnpm test` for annotation storage checks.
 
 ## Commits
 
