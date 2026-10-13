@@ -1,7 +1,8 @@
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSource from "pdfjs-dist/build/pdf.worker.min.mjs";
 export { TextLayer } from "pdfjs-dist";
-export type { PDFDocumentProxy, PDFDocumentLoadingTask, RenderTask } from "pdfjs-dist";
+export type { PDFDocumentProxy, PDFDocumentLoadingTask, PDFPageProxy, RenderTask } from "pdfjs-dist";
+export { RenderingCancelledException } from "pdfjs-dist";
 
 // Ship the matching worker in the plugin bundle. No CDN or private Obsidian PDF APIs.
 export function loadPdf(data: ArrayBuffer) {
