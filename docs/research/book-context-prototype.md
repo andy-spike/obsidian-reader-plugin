@@ -6,7 +6,7 @@ Completed October 12, 2026. The question was whether Claude Code and Codex can a
 
 Proceed with the accepted document-tool approach for the first implementation. Live runs establish that both assistant CLIs can obtain original passages through the proposed transports and use them for facts, comparisons, and synthesis. They do not establish reliable answers to every question or complete coverage of every source document.
 
-Keep these requirements in the implementation specification:
+Keep these requirements in the implementation:
 
 - Supply the selected passage and nearby text automatically.
 - Tell the reading assistant to search all permitted chapters for earlier definitions and references when local context is insufficient.
@@ -57,7 +57,7 @@ The installed Codex rejects `--ignore-user-config` as an unexpected argument. Th
 
 The experiment did not test embeddings, MiniSearch ranking, chapter summaries, PDF/EPUB extraction, Obsidian navigation, arbitrary passage-level spoiler limits, multi-turn compaction, resumed history, Windows, or broad quality across different books. Public-book answers may draw on model prior knowledge; the original fixture supplies the stronger check that new evidence can be retrieved. No comparison against full-book prompting was run.
 
-Next, write a specification for the production retrieval and CLI adapters using the requirements above. Include a larger held-out evaluation set and explicit coverage reporting before claiming reliable whole-document answers. The prototype should remain separate from production code.
+Use the requirements above when implementing production retrieval and CLI adapters. Include a larger held-out evaluation set and explicit coverage reporting before claiming reliable whole-document answers. The prototype should remain separate from production code.
 
 ## Inspect the retained primary source
 
@@ -67,5 +67,3 @@ git show 61eed56:src/prototype-book-context/results/codex-selection-guided.json
 ```
 
 To re-run it, switch to `prototype/book-context-retrieval` and follow its README. The HTML file opens directly in a browser and replays captured output without making model calls. Running the CLI experiment again makes live calls and consumes subscription usage.
-
-The resolved local issue is `.scratch/book-context/issues/01-evaluate-reading-tools.md`.

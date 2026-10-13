@@ -1,8 +1,6 @@
 # Reading workflow plan
 
-This document records the product interviews. Vocabulary is defined in the [glossary](../CONTEXT.md), and decisions that are hard to reverse are recorded in [docs/adr](./adr/). It records the latest product decisions, acceptance targets, and remaining implementation validation. It is not yet an approved implementation plan.
-
-The published [reading assistant specification](../.scratch/book-context/spec.md) defines the production document-question requirements and confirmed testing seam. Implementation tasks and their dependencies are the next planning step.
+This document records the product interviews, latest product decisions, architectural choices, acceptance targets, and remaining implementation validation. It is not yet an approved implementation plan.
 
 ## Scope of the first usable version
 
@@ -16,7 +14,7 @@ The published [reading assistant specification](../.scratch/book-context/spec.md
 - Selecting text shows a toolbar with **Highlight**, **Highlight + note**, and **Ask**. Each action is also a command that can be bound to a hotkey.
 - Each highlight has one highlight category: a color whose meaning the user sets in settings. Tags are deferred.
 - An Annotations panel in the sidebar lists the open document's highlights in reading order. It jumps to passages, edits passage notes inline, and lets the user undo a deletion. It is the only place annotations are edited.
-- The annotation record is authoritative. It is a documented JSON format with W3C-style selectors (quote with context, text position, EPUB CFI or PDF page location) stored in a vault folder, so it syncs with the vault. See [ADR 0001](./adr/0001-structured-annotation-record-with-generated-markdown.md).
+- The annotation record is authoritative. It is a documented JSON format with W3C-style selectors (quote with context, text position, EPUB CFI or PDF page location) stored in a vault folder, so it syncs with the vault.
 - The annotation file is regenerated in full from the record. Every highlight has a block ID, so the user's own notes can link to it. The user's freeform writing lives in separate notes.
 - Each source document has a stable ID, its last-known path, and a content fingerprint. Renames inside Obsidian update the path, and the fingerprint reconnects files moved outside Obsidian. Moving annotations to a different edition requires the user's confirmation.
 - The plugin tracks both the current location and the furthest point read. The user can reset the furthest point read.
@@ -54,7 +52,7 @@ Chapter summaries are an improvement to evaluate, not a required first implement
 
 Before relying on this design, test it with both assistant CLIs. Use an original fixture source document and a long public-domain source document. Check questions about selected passages, comparisons between chapters, and questions about the whole source document. Confirm that the reading assistant obtains the necessary evidence through the document tools, can retrieve more text when needed, and returns citations that open supporting passages. Also check tool result sizes and spoiler boundaries. The research does not establish that the plugin already passes these checks.
 
-An initial [live prototype](./research/book-context-prototype.md) completed these example cases with both assistant CLIs. It supports proceeding with the document-tool approach, but does not establish production acceptance. The specification must include guidance to find earlier definitions across permitted chapters, explicit pagination, useful handling of empty search queries, and disclosure of incomplete chapter coverage. Production extraction, retrieval quality, and Reader navigation still need validation.
+An initial [live prototype](./research/book-context-prototype.md) completed these example cases with both assistant CLIs. It supports proceeding with the document-tool approach, but does not establish production acceptance. The implementation must guide the assistant to find earlier definitions across permitted chapters, provide explicit pagination, handle empty search queries usefully, and disclose incomplete chapter coverage. Production extraction, retrieval quality, and Reader navigation still need validation.
 
 ## Failure behavior
 
@@ -73,7 +71,7 @@ An initial [live prototype](./research/book-context-prototype.md) completed thes
 
 ## Assistant CLI integration
 
-Both assistant CLIs sit behind one adapter interface implemented by the plugin, without a harness library. Each adapter launches the user's installed executable with Node's `child_process.spawn` and translates output into shared events: text, tool call, tool result, web activity, done, and error. V1 uses streaming text, visible tool calls and web activity, cancel, and resume in normal operation. Approval requests are declined automatically. Document citations always come from the plugin's own tool results. See [ADR 0003](./adr/0003-drive-the-users-own-assistant-clis.md) and [ADR 0004](./adr/0004-own-cli-adapters-without-a-harness-library.md).
+Both assistant CLIs sit behind one adapter interface implemented by the plugin, without a harness library. Each adapter launches the user's installed executable with Node's `child_process.spawn` and translates output into shared events: text, tool call, tool result, web activity, done, and error. V1 uses streaming text, visible tool calls and web activity, cancel, and resume in normal operation. Approval requests are declined automatically. Document citations always come from the plugin's own tool results.
 
 - **Claude Code:** one long-lived `claude -p` process per conversation, using stream-json input and output. The plugin hosts its MCP server on 127.0.0.1 at a random port with a per-session token, passes it with `--mcp-config` and `--strict-mcp-config`, and limits built-in tools to WebSearch and WebFetch with `--tools` when web research is enabled.
 - **Codex, primary mode:** `codex app-server`, using JSON-RPC over stdio. Each thread starts with `environments: []` to remove shell, file-editing, and patch tools. The plugin supplies `dynamicTools` over the existing connection, without an MCP server or token for this mode. Plugins, apps, goals, multi-agent, and similar features are disabled. A read-only sandbox, automatically declined approval requests, ignored user configuration, and an empty working directory provide additional restrictions.
@@ -89,11 +87,11 @@ The prototype found that Codex CLI 0.162.1 rejects `--ignore-user-config`. Ignor
 
 ## Release
 
-The plugin will be published publicly with support for both CLIs, without first asking Anthropic or OpenAI for confirmation. This is a known risk, and ADR 0003 records it. Before release, recheck both vendors' terms and Obsidian's developer policies, including the README's disclosure of network use and external process use.
+The plugin will be published publicly with support for both CLIs, without first asking Anthropic or OpenAI for confirmation. If either vendor objects to this integration, its CLI adapter may have to be withdrawn. Before release, recheck both vendors' terms and Obsidian's developer policies, including the README's disclosure of network use and external process use.
 
 ## Historical research notes
 
-The following notes record research and local tests from 2026-10-07. They are not a fresh compatibility or policy verification. The integration decisions above and ADRs include later refinements, particularly Codex dynamic tools and the choice to own the adapters. Recheck current primary documentation before implementation.
+The following notes record research and local tests from 2026-10-07. They are not a fresh compatibility or policy verification. The integration decisions above include later refinements, particularly Codex dynamic tools and the choice to own the adapters. Recheck current primary documentation before implementation.
 
 Claude Code supports multi-turn `claude -p` with `--input-format stream-json` and `--output-format stream-json`, `--mcp-config` with `--strict-mcp-config`, and `--tools` to restrict built-in tools. Sessions persist for 30 days, and the transcript format is internal. `--bare` mode skips the subscription login. If it becomes the default for `-p`, the plugin must opt out. These facts come from code.claude.com documentation and a local test on 2026-10-07.
 
