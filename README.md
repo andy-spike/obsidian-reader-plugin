@@ -6,9 +6,11 @@ The [product direction](docs/product-direction.md) summarizes the intended workf
 
 ## PDF reading and annotations
 
-Run **Reader Plugin: Open PDF in Reader**, or right-click a vault PDF and choose **Open in Reader**. Select a passage, choose its highlight color, and click **Highlight** or **Highlight + comment**. The annotations panel lets you edit comments, jump to pages, delete highlights, and undo the latest deletion. Changes save automatically; **Save annotations** retries a failed save.
+Vault PDFs open in Reader by default. Select a passage to show a popup beside the cursor, choose a color, then click **Highlight** or **Comment**. Comment opens a small editor at the selection; edits save while you type. Highlights and comments also appear in Obsidian's right sidebar, where you can edit, jump to passages, delete highlights, and undo the latest deletion.
 
-Records and searchable Markdown exports live in `Reader annotations/`. Edit comments in the Reader panel and keep your own freeform writing in separate notes. The [PDF reader guide](docs/pdf-reader.md) documents the storage schema, rename behavior, limitations, and runtime checks. Plugin settings let you name each highlight color's meaning.
+Zoom with **Fit width**, percentage choices, the plus/minus buttons, or Ctrl/Cmd-wheel. Reader remembers its page and zoom in Obsidian's workspace state. Use **Reader Plugin: Open PDF in Obsidian's normal viewer** from the command palette when you need the built-in viewer. **Show PDF annotations** reveals the sidebar.
+
+Records and searchable Markdown exports live in `Reader annotations/`. Every edit updates open Reader tabs and the sidebar immediately, then saves locally. Failed writes retry automatically. Keep freeform writing in separate notes. The [PDF reader guide](docs/pdf-reader.md) documents the storage schema, rename behavior, and runtime checks. Plugin settings let you name each highlight color's meaning.
 
 ## Planned reading assistant workflow
 

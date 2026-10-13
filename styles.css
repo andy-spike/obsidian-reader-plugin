@@ -1,18 +1,30 @@
 .reader-view { display: flex; flex-direction: column; padding: 0 !important; overflow: hidden; }
-.reader-toolbar, .reader-selection-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--background-modifier-border); }
+.reader-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--background-modifier-border); }
 .reader-toolbar { background: var(--background-primary); }
 .reader-toolbar input { width: 64px; }
 .reader-save-status { margin-left: auto; font-size: var(--font-ui-small); color: var(--text-muted); }
-.reader-selection-tools { background: var(--background-secondary); }
-.reader-selection-hint { flex: 1; min-width: 180px; font-size: var(--font-ui-small); color: var(--text-muted); }
+/* The contextual toolbar belongs to the selection, not the reading layout. */
+.reader-selection-tools { position: fixed; z-index: 1000; display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 8px; box-shadow: var(--shadow-s); max-width: calc(100vw - 16px); }
+.reader-selection-tools[hidden] { display: none; }
+.reader-popup-colors { display: flex; gap: 4px; padding-right: 8px; border-right: 1px solid var(--background-modifier-border); }
+.reader-selection-tools button.reader-color { width: 24px; height: 24px; min-width: 24px; border-radius: 50%; padding: 0; box-shadow: none; border: 2px solid transparent; }
+.reader-selection-tools button.reader-color[aria-pressed="true"] { border-color: var(--text-normal); }
+.reader-color-yellow { background: #f5d94d !important; }
+.reader-color-green { background: #70ca8a !important; }
+.reader-color-blue { background: #72a9ea !important; }
+.reader-color-pink { background: #ef8fb7 !important; }
+.reader-comment-popup { width: 300px; flex-wrap: wrap; }
+.reader-comment-popup textarea { width: 100%; resize: vertical; }
+.reader-comment-popup button { margin-left: auto; }
 .reader-body { display: flex; flex: 1; min-height: 0; }
 .reader-stage { flex: 1; min-width: 0; overflow: auto; padding: 24px; background: var(--background-secondary); }
 .reader-paper { position: relative; margin: 0 auto; background: white; color: #222; box-shadow: 0 2px 12px #0002; }
 .reader-paper > p, .reader-paper > h3 { padding: 20px; }
 .reader-paper canvas { display: block; }
-.reader-annotations { width: 300px; flex-shrink: 0; overflow: auto; padding: 16px; border-left: 1px solid var(--background-modifier-border); background: var(--background-primary); }
+.reader-annotations { overflow: auto; padding: 16px !important; background: var(--background-primary); }
 .reader-annotations h3 { margin: 0 0 20px; font-size: var(--font-ui-medium); }
-.reader-panel-hidden { display: none; }
+.reader-annotation-summary { color: var(--text-muted); font-size: var(--font-ui-small); margin: -8px 0 20px; }
+.reader-delete { font-size: var(--font-ui-small); }
 .reader-empty { color: var(--text-muted); line-height: 1.6; }
 .reader-annotation { border-left: 1px solid; padding: 0 0 16px 12px; margin-bottom: 24px; }
 .reader-annotation-yellow { border-color: #c9a52c; }
@@ -34,5 +46,4 @@
 .reader-paper .textLayer > :not(.markedContent), .reader-paper .textLayer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0; --scale-x: 1; --rotate: 0deg; font-size: calc(var(--text-scale-factor) * var(--font-height)); transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
 .reader-paper .textLayer .markedContent { display: contents; }
 .reader-paper .textLayer ::selection { background: #5386dc66; }
-@media (max-width: 800px) { .reader-annotations { width: 240px; } .reader-save-status { margin-left: 0; } }
-@media (max-width: 600px) { .reader-body { flex-direction: column; overflow: auto; } .reader-stage { min-height: 350px; flex: 1 0 350px; } .reader-annotations { width: auto; max-height: 280px; border-left: 0; border-top: 1px solid var(--background-modifier-border); } }
+@media (max-width: 600px) { .reader-save-status { margin-left: 0; } .reader-toolbar { gap: 6px; padding: 8px; } .reader-stage { padding: 16px; } }
