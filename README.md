@@ -6,7 +6,7 @@ The [product direction](docs/product-direction.md) summarizes the intended workf
 
 ## PDF reading and annotations
 
-Vault PDFs open in Reader by default. Pages scroll continuously; a floating bar at the bottom center shows the page number with previous/next arrows and the zoom controls. Click the zoom percentage for Fit width, Fit page, or a preset, and use the reset button to return to Fit width. Ctrl/Cmd-wheel zooms around the pointer. The view header has a table of contents for PDFs with an outline and a button that reveals the annotations sidebar. Reader remembers each tab's position and zoom.
+Vault PDFs open in Reader by default. Pages scroll continuously; a floating bar at the bottom center shows the page number with previous/next arrows and the zoom controls. Click the zoom percentage for Fit width, Fit page, or a preset, and use the reset button to return to Fit width. Ctrl/Cmd-wheel zooms around the pointer. The view header has a table of contents for PDFs with an outline and a button that opens and closes the annotations sidebar. Reader remembers each tab's position and zoom.
 
 Select a passage to show a popup at the cursor. Hover a color to preview it on the selection, then click it (or press its number key, 1–9) to highlight. **Comment** highlights and opens a comment field. Click anywhere else to clear the selection and close the popup. Click any highlight to change its color, add or remove its comment, copy its text, or delete it; deletion offers Undo. The right sidebar lists the document's highlights: click one to jump to it, click a comment to edit it, or hover it to recolor, comment, or delete. Comment fields grow with their text up to a limit and then scroll.
 

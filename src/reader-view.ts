@@ -1,10 +1,12 @@
-import { App, FileView, Menu, Notice, SuggestModal, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { FileView, Menu, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { randomUUID } from "node:crypto";
 import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, ReaderSettings } from "./settings";
 import { deleteAnnotation } from "./ui";
+import { OutlineModal } from "./outline-modal";
+import type { OutlineNode } from "./components/OutlineTree.svelte";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
 import { mount, unmount } from "svelte";
 
@@ -41,7 +43,7 @@ export interface ReaderHost {
   store: AnnotationStore;
   settings(): ReaderSettings;
   ready(reader: ReaderView): void;
-  showAnnotations(): void;
+  toggleAnnotations(): void;
   openNative(file: TFile): void;
 }
 
@@ -108,7 +110,7 @@ export class ReaderView extends FileView {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("reader-view");
-    this.addAction("highlighter", "Show annotations", () => this.host.showAnnotations());
+    this.addAction("highlighter", "Toggle annotations", () => this.host.toggleAnnotations());
     this.outlineAction = this.addAction("list", "Table of contents", () => void this.openOutline());
     this.outlineAction.hide();
 
@@ -776,18 +778,26 @@ export class ReaderView extends FileView {
     if (!pdf) return;
     const outline = await pdf.getOutline().catch(() => null);
     if (!outline?.length) { new Notice("This PDF has no table of contents."); return; }
-    const entries: OutlineEntry[] = [];
-    const walk = (items: typeof outline, depth: number) => {
+    const nodes: OutlineNode[] = [];
+    const targets: Promise<{ page: number; offset: number } | null>[] = [];
+    const walk = (items: typeof outline, depth: number, parent: number | null) => {
       for (const item of items) {
-        entries.push({ title: item.title.trim() || "Untitled", depth, target: this.resolveDestination(pdf, item.dest).catch(() => null) });
-        if (item.items?.length) walk(item.items, depth + 1);
+        const node: OutlineNode = { id: nodes.length, title: item.title.trim() || "Untitled", depth, parent, children: [] };
+        nodes.push(node);
+        targets.push(this.resolveDestination(pdf, item.dest).catch(() => null));
+        if (parent !== null) nodes[parent]!.children.push(node.id);
+        if (item.items?.length) walk(item.items, depth + 1, node.id);
       }
     };
-    walk(outline, 0);
-    await Promise.all(entries.map(async entry => { entry.page = (await entry.target)?.page; }));
+    walk(outline, 0, null);
+    const resolved = await Promise.all(targets);
+    resolved.forEach((target, id) => { nodes[id]!.page = target?.page; });
     if (pdf !== this.pdf) return;
-    new OutlineModal(this.app, entries, async entry => {
-      const target = await entry.target;
+    // The section being read is the last one that starts on or before the current page.
+    let current: number | null = null;
+    for (const node of nodes) if (node.page !== undefined && node.page <= this.page && (current === null || node.page >= nodes[current]!.page!)) current = node.id;
+    new OutlineModal(this.app, nodes, current, node => {
+      const target = resolved[node.id];
       if (target && pdf === this.pdf) this.goToPage(target.page, target.offset);
     }).open();
   }
@@ -803,26 +813,4 @@ export class ReaderView extends FileView {
     const top = explicit[1]?.name === "XYZ" && typeof explicit[3] === "number" ? explicit[3] : null;
     return { page: index + 1, offset: top !== null && slot ? Math.max(0, Math.min(1, (slot.height - top) / slot.height)) : 0 };
   }
-}
-
-interface OutlineEntry { title: string; depth: number; target: Promise<{ page: number; offset: number } | null>; page?: number }
-
-class OutlineModal extends SuggestModal<OutlineEntry> {
-  constructor(app: App, private entries: OutlineEntry[], private choose: (entry: OutlineEntry) => void) {
-    super(app);
-    this.setPlaceholder("Jump to a chapter or section");
-    this.limit = 500;
-  }
-  getSuggestions(query: string): OutlineEntry[] {
-    const needle = query.trim().toLowerCase();
-    return needle ? this.entries.filter(entry => entry.title.toLowerCase().includes(needle)) : this.entries;
-  }
-  renderSuggestion(entry: OutlineEntry, el: HTMLElement): void {
-    el.addClass("reader-outline-item");
-    el.style.paddingInlineStart = `calc(var(--size-4-3) + ${entry.depth * 16}px)`;
-    el.createSpan({ cls: "reader-outline-title", text: entry.title });
-    if (entry.page) el.createSpan({ cls: "reader-outline-page", text: String(entry.page) });
-    if (entry.depth === 0) el.addClass("is-top-level");
-  }
-  onChooseSuggestion(entry: OutlineEntry): void { this.choose(entry); }
 }

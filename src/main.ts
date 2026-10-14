@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, WorkspaceLeaf, WorkspaceSidedock } from "obsidian";
 
 import { AnnotationStore } from "./annotations";
 import { ReaderView, READER_VIEW } from "./reader-view";
@@ -30,11 +30,28 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       })().finally(() => { sidebarOpening = null; });
       return sidebarOpening;
     };
+    /** Set when the reader closes the panel with the toggle, so opening another PDF doesn't bring it straight back. */
+    let sidebarDismissed = false;
+    const toggleAnnotations = async (): Promise<void> => {
+      const leaf = this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW)[0];
+      const root = leaf?.getRoot();
+      const inSidebar = root === this.app.workspace.rightSplit || root === this.app.workspace.leftSplit;
+      const visible = !!leaf && leaf.view.containerEl.isShown() && !(inSidebar && (root as WorkspaceSidedock).collapsed);
+      if (!visible) {
+        sidebarDismissed = false;
+        await showAnnotations();
+        return;
+      }
+      sidebarDismissed = true;
+      // In a sidebar, collapse it like Obsidian's own sidebar toggle; elsewhere, close the tab.
+      if (inSidebar) (root as WorkspaceSidedock).collapse();
+      else leaf.detach();
+    };
     const ready = (reader: ReaderView) => {
       if (this.reader === reader || this.app.workspace.getMostRecentLeaf() === reader.leaf || this.app.workspace.getActiveViewOfType(ReaderView) === reader) {
         this.reader = reader.getRecord() ? reader : null;
         refreshSidebar();
-        if (this.reader) void showAnnotations();
+        if (this.reader && !sidebarDismissed) void showAnnotations();
       }
     };
     this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, store, () => this.reader, () => this.settings));
@@ -46,7 +63,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
-      store, ready, settings: () => this.settings, showAnnotations: () => void showAnnotations(), openNative: file => void open(file, undefined, true),
+      store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(), openNative: file => void open(file, undefined, true),
     }));
     this.addSettingTab(new ReaderSettingTab(this.app, this));
     // Saving is silent while it works. Report a failing vault write once, and again when it recovers.
@@ -68,7 +85,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         else new PdfPicker(this.app, file => void open(file, undefined, native)).open();
       },
     });
-    this.addCommand({ id: "show-annotations", name: "Show PDF annotations", callback: () => void showAnnotations() });
+    this.addCommand({ id: "show-annotations", name: "Toggle PDF annotations", callback: () => void toggleAnnotations() });
     const routeNow = () => {
       if (!this.routing) return;
       for (const leaf of this.app.workspace.getLeavesOfType("pdf")) {

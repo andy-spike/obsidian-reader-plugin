@@ -42,7 +42,8 @@ button.reader-swatch:hover { background: var(--reader-color); transform: scale(1
 button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15), 0 0 0 2px var(--background-primary), 0 0 0 4px var(--text-muted); }
 .reader-view button.reader-text-button { display: flex; align-items: center; gap: var(--size-2-2); padding: var(--size-2-2) var(--size-4-2) var(--size-2-2) var(--size-2-3); color: var(--text-muted); font-size: var(--font-ui-small); }
 .reader-view button.reader-text-button:hover { color: var(--text-normal); }
-.reader-text-button-icon { display: flex; }
+.reader-button-icon { display: flex; }
+.reader-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .reader-popup .reader-comment-editor { margin: 0 2px; width: auto; }
 /* Comment fields grow with their text up to a limit, then scroll. They never show a resize handle. */
 textarea.reader-comment-editor { display: block; box-sizing: border-box; resize: none; field-sizing: content; min-height: calc(3lh + 14px); max-height: calc(10lh + 14px); overflow-y: auto; padding: 6px 8px; font-size: var(--font-ui-small); line-height: 1.5; }
@@ -77,10 +78,18 @@ textarea.reader-comment-editor { display: block; box-sizing: border-box; resize:
 .reader-color-setting .setting-item-info { display: none; }
 .reader-color-setting .setting-item-control { justify-content: flex-start; }
 .reader-color-setting input[type="text"] { flex: 1; }
-.reader-outline-item { display: flex; align-items: baseline; gap: 12px; }
-.reader-outline-item.is-top-level { font-weight: var(--font-medium); }
-.reader-outline-title { flex: 1; min-width: 0; }
-.reader-outline-page { flex: none; color: var(--text-faint); font-size: var(--font-ui-small); font-variant-numeric: tabular-nums; }
+/* Table of contents: Obsidian's tree rows in a tall dialog, with the list scrolling under the search field. */
+.reader-outline-modal { width: min(640px, 92vw); height: min(720px, 85vh); }
+.reader-outline-modal .modal-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.reader-outline-search { flex: none; margin-bottom: var(--size-4-2); }
+.reader-outline-search input { width: 100%; }
+.reader-outline-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--size-4-2)); }
+.reader-outline-row { margin-bottom: 1px; align-items: center; }
+.reader-outline-row.is-top-level { font-weight: var(--font-medium); }
+.reader-outline-row.is-current .tree-item-inner { color: var(--text-accent); }
+.reader-outline-row.is-dimmed .tree-item-inner { color: var(--text-faint); }
+.reader-outline-row .tree-item-flair { font-variant-numeric: tabular-nums; }
+.reader-outline-empty { padding: var(--size-4-4); color: var(--text-muted); text-align: center; }
 
 /* ---- PDF.js text layer (matches the bundled pdf_viewer.css contract) ---- */
 .reader-page .textLayer { position: absolute; inset: 0; z-index: 2; overflow: clip; opacity: 1; text-align: initial; line-height: 1; letter-spacing: normal; word-spacing: normal; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; color-scheme: only light; --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size)); }
