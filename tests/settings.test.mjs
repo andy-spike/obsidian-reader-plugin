@@ -73,6 +73,9 @@ test("book note settings have defaults and clean paths", () => {
   assert.equal(defaults.noteTemplate, "");
   assert.equal(defaults.noteOpening, "split");
   assert.equal(defaults.highlightMode, false);
+  assert.equal(defaults.highlightModeColor, "yellow");
+  assert.equal(loadSettings({ highlightModeColor: "blue" }).highlightModeColor, "blue");
+  assert.equal(loadSettings({ highlightModeColor: "not an id" }).highlightModeColor, "yellow");
   assert.equal(loadSettings({ highlightMode: true }).highlightMode, true);
   assert.equal(loadSettings({ highlightMode: "yes" }).highlightMode, false);
   const saved = loadSettings({ notesFolder: " /Reading/Notes/ ", noteTemplate: "Templates/Book.md", noteOpening: "tab" });

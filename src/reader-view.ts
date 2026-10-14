@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
-import { colorOf, ReaderSettings } from "./settings";
-import { deleteAnnotation } from "./ui";
+import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
+import { colorMenu, deleteAnnotation } from "./ui";
 import { OutlineModal } from "./outline-modal";
 import type { OutlineNode } from "./components/OutlineTree.svelte";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
@@ -49,6 +49,8 @@ export interface ReaderHost {
   toggleAnnotations(): void;
   /** Turns highlight mode on or off for every Reader. */
   toggleHighlightMode(): void;
+  /** Sets the color highlight mode uses and turns the mode on. */
+  chooseHighlightModeColor(id: string): void;
   openNative(file: TFile): void;
   /** Opens this PDF's book note, at a passage's section when given. */
   openNote(reader: ReaderView, annotationId: string | null): void;
@@ -124,10 +126,15 @@ export class ReaderView extends FileView {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("reader-view");
-    this.addAction("notebook-pen", "Open book note", () => this.host.openNote(this, null));
+    // Each action is placed before the previous one, so they show in the reverse of this order.
     this.addAction("panel-right", "Toggle annotations", () => this.host.toggleAnnotations());
+    this.addAction("notebook-pen", "Open book note", () => this.host.openNote(this, null));
     this.modeAction = this.addAction("highlighter", "", () => this.host.toggleHighlightMode());
     this.modeAction.addClass("reader-mode-action");
+    this.modeAction.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      colorMenu(this.host.settings().colors, this.modeColor().id, id => this.host.chooseHighlightModeColor(id)).showAtMouseEvent(event);
+    });
     this.showHighlightMode();
     this.outlineAction = this.addAction("list", "Table of contents", () => void this.openOutline());
     this.outlineAction.hide();
@@ -183,7 +190,9 @@ export class ReaderView extends FileView {
         option("Fit page", this.fit === "page", () => this.setZoom(this.fitZoom("page"), "page"));
         menu.addSeparator();
         for (const zoom of ZOOM_PRESETS) option(`${Math.round(zoom * 100)}%`, !this.fit && Math.abs(this.zoom - zoom) < 0.005, () => this.setZoom(zoom, null));
-        menu.showAtPosition({ x: rect.left, y: rect.top, width: rect.width, left: true });
+        // Anchored just above the button: the bar sits at the bottom, so Obsidian flips the menu to open upward from here,
+        // lined up with the button instead of beside it.
+        menu.showAtPosition({ x: rect.left, y: rect.top - 6, width: rect.width, overlap: true }, this.contentEl.ownerDocument);
       },
     } });
     this.register(() => void unmount(this.controls));
@@ -641,9 +650,8 @@ export class ReaderView extends FileView {
       this.pages.querySelectorAll(".textLayer.selecting").forEach(layer => layer.removeClass("selecting"));
       this.passages = this.readSelection();
       if (this.passages.length && this.host.settings().highlightMode) {
-        // Highlight mode: a finished mouse selection becomes a highlight in the last used color, without the popup.
-        if (!this.host.settings().colors.some(color => color.id === this.lastColor)) this.lastColor = this.host.settings().colors[0]!.id;
-        this.createHighlights(this.lastColor, false);
+        // Highlight mode: a finished mouse selection becomes a highlight in the mode's color, without the popup.
+        this.createHighlights(this.modeColor().id, false);
       } else if (this.passages.length) {
         const bounds = doc.getSelection()!.getRangeAt(0).getBoundingClientRect();
         this.showSelectionPopup({ clientX: event.clientX, top: event.clientY, bottom: event.clientY, above: event.clientY < bounds.top + bounds.height / 2 });
@@ -838,11 +846,19 @@ export class ReaderView extends FileView {
     this.showHighlightMode();
   }
 
+  /** Highlight mode's color, or the first color if the chosen one was removed. */
+  private modeColor(): HighlightColor {
+    const colors = this.host.settings().colors;
+    return colors.find(color => color.id === this.host.settings().highlightModeColor) ?? colors[0]!;
+  }
+
   private showHighlightMode(): void {
     const on = this.host.settings().highlightMode;
+    const color = this.modeColor();
     this.modeAction.toggleClass("is-active", on);
+    this.modeAction.style.setProperty("--reader-mode-color", color.value);
     this.modeAction.setAttribute("aria-pressed", String(on));
-    this.modeAction.setAttribute("aria-label", on ? "Highlight mode is on: selecting text highlights it" : "Turn on highlight mode");
+    this.modeAction.setAttribute("aria-label", `${on ? "Highlight mode is on" : "Turn on highlight mode"}: selecting text highlights it in ${color.name}. Right-click to choose the color.`);
   }
 
   private async persist(): Promise<void> {

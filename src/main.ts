@@ -112,7 +112,12 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
       store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(),
-      toggleHighlightMode, openNative: file => void open(file, undefined, true), openNote,
+      toggleHighlightMode,
+      chooseHighlightModeColor: id => {
+        this.settings.highlightModeColor = id;
+        this.settings.highlightMode = true;
+        void this.saveSettings();
+      }, openNative: file => void open(file, undefined, true), openNote,
       writing: (record, annotationId) => bookNotes.writing(record, annotationId),
       lastPosition: path => this.positions.get(path),
       rememberPosition: (path, position) => this.rememberPosition(path, position),
