@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, FileSystemAdapter, Platform, WorkspaceLeaf, WorkspaceSidedock } from "obsidian";
 
 import { AnnotationStore } from "./annotations";
+import { BookNotes } from "./book-notes";
 import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
 import { stopPdfWorker } from "./pdf-engine";
@@ -21,11 +22,18 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   /** Positions recorded here since the last write, kept when another Obsidian changes the data file first. */
   private unsavedPositions = new Set<string>();
   private settingTab!: ReaderSettingTab;
+  private bookNotes!: BookNotes;
   async onload(): Promise<void> {
     const data = await this.loadData();
     this.settings = loadSettings(data);
     this.positions = loadPositions(data);
     const store = this.store = new AnnotationStore(this.app.vault.adapter, { folder: this.settings.folder, colorName: id => colorOf(this.settings, id).name });
+    const bookNotes = this.bookNotes = new BookNotes(this.app, store, () => this.settings);
+    // Saves made in this window bring the book note up to date; another window's saves are left to that window.
+    this.register(store.subscribe(record => bookNotes.schedule(record)));
+    this.register(() => bookNotes.dispose());
+    this.registerEvent(this.app.vault.on("modify", file => { if (file instanceof TFile) void bookNotes.changed(file); }));
+    this.registerEvent(this.app.vault.on("delete", file => bookNotes.deleted(file.path)));
     const refreshSidebar = () => this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
     let sidebarOpening: Promise<void> | null = null;
     const showAnnotations = (): Promise<void> => {
@@ -64,6 +72,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       else leaf.detach();
     };
     const ready = (reader: ReaderView) => {
+      const record = reader.getRecord();
+      if (record) void bookNotes.load(record).then(() => { if (record.annotations.length) bookNotes.schedule(record); });
       if (this.reader === reader || this.app.workspace.getMostRecentLeaf() === reader.leaf || this.app.workspace.getActiveViewOfType(ReaderView) === reader) {
         this.reader = reader.getRecord() ? reader : null;
         refreshSidebar();
@@ -71,15 +81,28 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       }
     };
     this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, store, () => this.reader, () => this.settings));
-    const open = async (file: TFile, page?: number, native = false) => {
+    /** Opens a PDF, reusing a Reader tab that already shows it. Returns the Reader, if it is one. */
+    const open = async (file: TFile, page?: number, native = false): Promise<ReaderView | null> => {
+      const existing = native ? null : this.app.workspace.getLeavesOfType(READER_VIEW).find(leaf => (leaf.view as ReaderView).file === file);
+      if (existing) {
+        await this.app.workspace.revealLeaf(existing);
+        this.app.workspace.setActiveLeaf(existing, { focus: true });
+        if (page) (existing.view as ReaderView).goToPage(page);
+        return existing.view as ReaderView;
+      }
       const leaf = this.app.workspace.getLeaf("tab");
       if (native) this.nativeTabs.set(leaf, file.path);
       await leaf.setViewState({ type: native ? "pdf" : READER_VIEW, state: native || !page ? { file: file.path } : { file: file.path, page } });
       await this.app.workspace.revealLeaf(leaf);
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
+      return leaf.view instanceof ReaderView ? leaf.view : null;
+    };
+    const openNote = (reader: ReaderView, annotationId: string | null) => {
+      const record = reader.getRecord();
+      if (record) void bookNotes.open(record, annotationId, reader.leaf).catch(error => new Notice(`Could not open the book note: ${String(error)}`));
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
-      store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(), openNative: file => void open(file, undefined, true),
+      store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(), openNative: file => void open(file, undefined, true), openNote,
       lastPosition: path => this.positions.get(path),
       rememberPosition: (path, position) => this.rememberPosition(path, position),
     }));
@@ -141,6 +164,23 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       }
     }));
     this.app.workspace.onLayoutReady(routePdfs);
+    // A rendered link to a PDF, such as a book note's `[[book.pdf#page=2|PDF]]`, opens in the Reader at its page, reusing a Reader
+    // that already shows the PDF. Left to Obsidian, it would replace the note's tab with the native viewer, and the page would be lost
+    // when routing swaps in the Reader. Capturing at the document runs before Obsidian's own link handler.
+    const openPdfLink = (event: MouseEvent) => {
+      if (!this.routing || event.button !== 0) return;
+      const link = (event.target as Element | null)?.closest?.("a.internal-link");
+      const href = link?.getAttribute("data-href") ?? link?.getAttribute("href");
+      if (!href) return;
+      const [path = "", subpath = ""] = href.split("#", 2);
+      const file = this.app.metadataCache.getFirstLinkpathDest(path, this.app.workspace.getActiveFile()?.path ?? "");
+      if (file?.extension !== "pdf") return;
+      event.preventDefault();
+      event.stopPropagation();
+      void open(file, Number(/(?:^|&)page=(\d+)/.exec(subpath)?.[1]) || undefined);
+    };
+    this.registerDomEvent(document, "click", openPdfLink, { capture: true });
+    this.registerEvent(this.app.workspace.on("window-open", win => this.registerDomEvent(win.doc, "click", openPdfLink, { capture: true })));
     for (const withComment of [false, true]) this.addCommand({
       id: withComment ? "highlight-with-comment" : "highlight-selection",
       name: withComment ? "Highlight selected PDF passage with comment" : "Highlight selected PDF passage",
@@ -164,6 +204,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     readerCommand("zoom-out", "Zoom out", view => view.zoomBy(-1));
     readerCommand("reset-zoom", "Reset zoom", view => view.resetZoom());
     readerCommand("table-of-contents", "Show table of contents", view => void view.openOutline());
+    readerCommand("open-book-note", "Open book note", view => openNote(view, null));
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       if (file instanceof TFile && file.extension === "pdf") {
         menu.addItem(item => item.setTitle("Open in Reader").setIcon("book-open").onClick(() => void open(file)));
@@ -173,14 +214,18 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       const position = this.positions.get(oldPath);
       if (position && this.positions.delete(oldPath)) this.rememberPosition(file.path, position);
+      if (file instanceof TFile) bookNotes.renamed(file, oldPath);
       void store.rename(oldPath, file.path).catch(error => new Notice(`Could not update annotation source: ${error.message}`));
     }));
     this.registerObsidianProtocolHandler("reader-plugin", async params => {
       try {
         const record = await store.find(params.document ?? "");
         const file = record && this.app.vault.getAbstractFileByPath(record.sourcePath);
-        if (!(file instanceof TFile)) { new Notice("The annotated PDF could not be found in this vault."); return; }
-        await open(file, Number(params.page) || 1);
+        if (!record || !(file instanceof TFile)) { new Notice("The annotated PDF could not be found in this vault."); return; }
+        // A link to a highlight scrolls to it and pulses it; if it was deleted, the page still opens.
+        const annotation = record.annotations.find(candidate => candidate.id === params.annotation);
+        const reader = await open(file, annotation ? undefined : Number(params.page) || 1);
+        if (annotation && reader) await reader.showAnnotationWhenReady(annotation.id);
       } catch (error) { new Notice(`Could not open annotation: ${String(error)}`); }
     });
     this.addCommand({

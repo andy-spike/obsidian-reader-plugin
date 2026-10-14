@@ -1,8 +1,18 @@
-import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Scope, setIcon, Setting, TFolder } from "obsidian";
+import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Scope, setIcon, Setting, TFile, TFolder } from "obsidian";
 import { ANNOTATION_FOLDER } from "./annotations";
 
 export interface HighlightColor { id: string; name: string; value: string }
-export interface ReaderSettings { colors: HighlightColor[]; folder: string }
+export type NoteOpening = "split" | "tab";
+export interface ReaderSettings {
+  colors: HighlightColor[];
+  folder: string;
+  /** Where new book notes are created. */
+  notesFolder: string;
+  /** A note whose text starts each new book note, or empty for the default. */
+  noteTemplate: string;
+  noteOpening: NoteOpening;
+}
+export const NOTES_FOLDER = "Book notes";
 
 /**
  * Primary and Secondary always come first, in this order. Their color and name can change, but they can't be moved or removed;
@@ -30,7 +40,7 @@ export function colorOf(settings: ReaderSettings, id: string): HighlightColor {
 export const FIXED_COLORS = DEFAULT_COLORS.length;
 
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown> };
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; noteOpening?: unknown };
   const valid = Array.isArray(data.colors)
     ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
@@ -39,7 +49,14 @@ export function loadSettings(saved: unknown): ReaderSettings {
   const defaults = DEFAULT_COLORS.map(color => { const own = colors.find(other => other.id === color.id); return { ...color, ...(own && { name: own.name, value: own.value }) }; });
   const added = colors.filter(color => !DEFAULT_COLORS.some(other => other.id === color.id)).map(color => ({ id: color.id, name: color.name, value: color.value }));
   const folder = typeof data.folder === "string" ? cleanFolder(data.folder) : null;
-  return { colors: [...defaults, ...added], folder: folder ?? ANNOTATION_FOLDER };
+  const notesFolder = typeof data.notesFolder === "string" ? cleanFolder(data.notesFolder) : null;
+  return {
+    colors: [...defaults, ...added],
+    folder: folder ?? ANNOTATION_FOLDER,
+    notesFolder: notesFolder ?? NOTES_FOLDER,
+    noteTemplate: typeof data.noteTemplate === "string" ? cleanFolder(data.noteTemplate) ?? "" : "",
+    noteOpening: data.noteOpening === "tab" ? "tab" : "split",
+  };
 }
 
 /** Returns a vault-relative folder path, or null for the vault root and empty input. */
@@ -117,6 +134,42 @@ export class ReaderSettingTab extends PluginSettingTab {
         this.display();
         containerEl.querySelectorAll<HTMLInputElement>(".reader-color-setting input[type=text]").item(settings.colors.length - 1)?.select();
       }));
+
+    new Setting(containerEl).setName("Book notes").setHeading()
+      .setDesc("Each PDF gets one note that holds a quote for every highlight and everything you write about it. The note is yours: the plugin adds a section for each new highlight and removes the section of a deleted highlight only when nothing is written under it.");
+    const saveOnLeave = (input: HTMLInputElement, apply: (value: string) => void) => {
+      input.addEventListener("blur", () => { apply(input.value); void this.host.saveSettings(); });
+      input.addEventListener("keydown", event => { if (event.key === "Enter") input.blur(); });
+    };
+    new Setting(containerEl)
+      .setName("Book notes folder")
+      .setDesc("Where new book notes are created. Existing notes stay where they are.")
+      .addText(text => {
+        text.setPlaceholder(NOTES_FOLDER).setValue(settings.notesFolder);
+        const apply = (value: string) => { settings.notesFolder = cleanFolder(value) ?? NOTES_FOLDER; text.setValue(settings.notesFolder); };
+        new FolderSuggest(this.app, text.inputEl, folder => { apply(folder); void this.host.saveSettings(); });
+        saveOnLeave(text.inputEl, apply);
+      });
+    new Setting(containerEl)
+      .setName("Book note template")
+      .setDesc("A note whose text starts each new book note. {{title}}, {{source}}, and {{date}} are filled in, and a source link is added to its properties. Leave empty for a title and a source link.")
+      .addText(text => {
+        text.setPlaceholder("Templates/Book note.md").setValue(settings.noteTemplate);
+        const apply = (value: string) => { settings.noteTemplate = cleanFolder(value) ?? ""; text.setValue(settings.noteTemplate); };
+        new NoteSuggest(this.app, text.inputEl, path => { apply(path); void this.host.saveSettings(); });
+        saveOnLeave(text.inputEl, apply);
+      });
+    new Setting(containerEl)
+      .setName("Open book notes")
+      .setDesc("Where a book note opens from the Reader.")
+      .addDropdown(dropdown => dropdown
+        .addOption("split", "Beside the PDF")
+        .addOption("tab", "In a new tab")
+        .setValue(settings.noteOpening)
+        .onChange(async value => {
+          settings.noteOpening = value === "tab" ? "tab" : "split";
+          await this.host.saveSettings();
+        }));
 
     new Setting(containerEl).setName("Storage").setHeading();
     let pending = settings.folder;
@@ -228,6 +281,20 @@ export class ReaderSettingTab extends PluginSettingTab {
     this.display();
     if (refocus) this.containerEl.querySelectorAll<HTMLElement>(".reader-color-handle").item(to - FIXED_COLORS)?.focus();
     await this.host.saveSettings();
+  }
+}
+
+class NoteSuggest extends AbstractInputSuggest<TFile> {
+  constructor(app: App, private input: HTMLInputElement, private choose: (path: string) => void) { super(app, input); }
+  protected getSuggestions(query: string): TFile[] {
+    const needle = query.toLowerCase();
+    return this.app.vault.getMarkdownFiles().filter(file => file.path.toLowerCase().includes(needle)).slice(0, 50);
+  }
+  renderSuggestion(file: TFile, el: HTMLElement): void { el.setText(file.path); }
+  selectSuggestion(file: TFile): void {
+    this.input.value = file.path;
+    this.choose(file.path);
+    this.close();
   }
 }
 

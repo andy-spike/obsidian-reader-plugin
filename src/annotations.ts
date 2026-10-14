@@ -18,6 +18,8 @@ export interface AnnotationRecord {
   documentId: string;
   sourcePath: string;
   fingerprint: string;
+  /** The book note for this PDF, once one exists. */
+  notePath?: string;
   annotations: Annotation[];
 }
 export interface Storage {
@@ -33,7 +35,7 @@ export function fingerprint(data: ArrayBuffer): string {
 export function parseRecord(text: string): AnnotationRecord {
   const r = JSON.parse(text) as AnnotationRecord;
   if (r.version !== 1 || typeof r.documentId !== "string" || !/^[\w-]+$/.test(r.documentId) || typeof r.sourcePath !== "string" ||
-      !/^[a-f0-9]{64}$/.test(r.fingerprint) || !Array.isArray(r.annotations)) throw new Error("Unsupported annotation record.");
+      !/^[a-f0-9]{64}$/.test(r.fingerprint) || !Array.isArray(r.annotations) || (r.notePath !== undefined && typeof r.notePath !== "string")) throw new Error("Unsupported annotation record.");
   const ids = new Set<string>();
   for (const a of r.annotations) {
     if (typeof a.id !== "string" || !/^[\w-]+$/.test(a.id) || ids.has(a.id) || !Number.isInteger(a.page) || a.page < 1 ||
@@ -182,8 +184,10 @@ export class AnnotationStore {
       for (const path of (await this.storage.list(this.folder)).files.filter(path => path.endsWith(".json"))) {
         const loaded = parseRecord(await this.storage.read(path));
         const record = this.records.get(loaded.documentId) ?? loaded;
-        if (record.sourcePath === oldPath || record.sourcePath.startsWith(oldPath + "/")) {
-          record.sourcePath = newPath + record.sourcePath.slice(oldPath.length);
+        const moves = (path: string | undefined) => !!path && (path === oldPath || path.startsWith(oldPath + "/"));
+        if (moves(record.sourcePath) || moves(record.notePath)) {
+          if (moves(record.sourcePath)) record.sourcePath = newPath + record.sourcePath.slice(oldPath.length);
+          if (moves(record.notePath)) record.notePath = newPath + record.notePath!.slice(oldPath.length);
           this.records.set(record.documentId, record);
           await this.write(record);
           this.notify(record);

@@ -66,3 +66,16 @@ test("version 0.1 names load with the defaults first", () => {
   const settings = loadSettings({ labels: { yellow: "Main", green: "Example", blue: "Detail", pink: "Doubt" } });
   assert.deepEqual(settings.colors.map(color => `${color.id}:${color.name}`), ["yellow:Main", "blue:Detail", "green:Example", "pink:Doubt"]);
 });
+
+test("book note settings have defaults and clean paths", () => {
+  const defaults = loadSettings(null);
+  assert.equal(defaults.notesFolder, "Book notes");
+  assert.equal(defaults.noteTemplate, "");
+  assert.equal(defaults.noteOpening, "split");
+  const saved = loadSettings({ notesFolder: " /Reading/Notes/ ", noteTemplate: "Templates/Book.md", noteOpening: "tab" });
+  assert.equal(saved.notesFolder, "Reading/Notes");
+  assert.equal(saved.noteTemplate, "Templates/Book.md");
+  assert.equal(saved.noteOpening, "tab");
+  assert.equal(loadSettings({ notesFolder: "/", noteOpening: "window" }).notesFolder, "Book notes");
+  assert.equal(loadSettings({ noteOpening: "window" }).noteOpening, "split");
+});

@@ -48,6 +48,8 @@ export interface ReaderHost {
   ready(reader: ReaderView): void;
   toggleAnnotations(): void;
   openNative(file: TFile): void;
+  /** Opens this PDF's book note, at a passage's section when given. */
+  openNote(reader: ReaderView, annotationId: string | null): void;
   lastPosition(path: string): ReadingPosition | undefined;
   rememberPosition(path: string, position: ReadingPosition): void;
 }
@@ -117,6 +119,7 @@ export class ReaderView extends FileView {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("reader-view");
+    this.addAction("notebook-pen", "Open book note", () => this.host.openNote(this, null));
     this.addAction("highlighter", "Toggle annotations", () => this.host.toggleAnnotations());
     this.outlineAction = this.addAction("list", "Table of contents", () => void this.openOutline());
     this.outlineAction.hide();
@@ -574,6 +577,15 @@ export class ReaderView extends FileView {
     el.addEventListener("pointerenter", () => window.clearTimeout(this.toastTimer));
     el.addEventListener("pointerleave", arm);
     arm();
+  }
+
+  /** Like `showAnnotation`, for a tab that may still be opening: waits until the PDF is laid out and its saved position applied. */
+  async showAnnotationWhenReady(id: string): Promise<void> {
+    for (let waited = 0; waited < 10000; waited += 100) {
+      const annotation = this.pdf && !this.restore ? this.record?.annotations.find(candidate => candidate.id === id) : undefined;
+      if (annotation) return this.showAnnotation(annotation);
+      await new Promise(resolve => window.setTimeout(resolve, 100));
+    }
   }
 
   /** Scrolls a highlight into view from the sidebar and briefly pulses it. */
