@@ -5,7 +5,7 @@
  *
  * A section looks like this. The link in the first line carries the highlight's ID, which is how the section is found again.
  *
- *     > [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=…&annotation=…&page=34) · [[Book.pdf#page=34|PDF]]
+ *     > [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=…&annotation=…&page=34)
  *     > The quoted passage.
  *
  *     ^e66da097
@@ -18,8 +18,6 @@ export interface SectionInput {
   annotationId: string;
   page: number;
   quote: string;
-  /** Link text for the PDF, as Obsidian would write it from the note. */
-  pdfLink: string;
 }
 
 export interface Section {
@@ -54,10 +52,9 @@ export function quoteText(quote: string): string {
 
 /** The lines of a new section, without the blank lines around it. */
 export function sectionLines(input: SectionInput): string[] {
-  const link = input.pdfLink.replace(/[[\]|#\r\n]/g, "");
   const quote = quoteText(input.quote).split("\n").filter(Boolean);
   return [
-    `> [!quote] p. ${input.page} · [Open passage](${passageUri(input.documentId, input.annotationId, input.page)}) · [[${link}#page=${input.page}|PDF]]`,
+    `> [!quote] p. ${input.page} · [Open passage](${passageUri(input.documentId, input.annotationId, input.page)})`,
     ...(quote.length ? quote : [""]).map(line => `> ${line}`),
     "",
     `^${blockId(input.annotationId)}`,
@@ -139,6 +136,11 @@ export function appendWriting(text: string, section: Section, writing: string): 
   joinAt(lines, at + added.length);
   joinAt(lines, at);
   return finish(lines);
+}
+
+/** Removes the `· [[book.pdf#page=N|PDF]]` link that earlier sections had after **Open passage**. Only section first lines change. */
+export function dropPdfLinks(text: string): string {
+  return text.split("\n").map(line => HEADER.test(line) ? line.replace(/ · \[\[[^\]\n]*#page=\d+\|PDF\]\]\s*$/, "") : line).join("\n");
 }
 
 /** Comments from before book notes, to place under their passages' quotes. */

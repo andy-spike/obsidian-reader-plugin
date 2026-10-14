@@ -178,12 +178,33 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       }
     }));
     this.app.workspace.onLayoutReady(routePdfs);
-    // A rendered link to a PDF, such as a book note's `[[book.pdf#page=2|PDF]]`, opens in the Reader at its page, reusing a Reader
-    // that already shows the PDF. Left to Obsidian, it would replace the note's tab with the native viewer, and the page would be lost
+    /** Opens the PDF of a passage link and scrolls to its highlight, or to its page if the highlight was deleted. */
+    const openPassage = async (params: Record<string, string | undefined>) => {
+      try {
+        const record = await store.find(params.document ?? "");
+        const file = record && this.app.vault.getAbstractFileByPath(record.sourcePath);
+        if (!record || !(file instanceof TFile)) { new Notice("The annotated PDF could not be found in this vault."); return; }
+        const annotation = record.annotations.find(candidate => candidate.id === params.annotation);
+        const reader = await open(file, annotation ? undefined : Number(params.page) || 1);
+        if (annotation && reader) await reader.showAnnotationWhenReady(annotation.id);
+      } catch (error) { new Notice(`Could not open annotation: ${String(error)}`); }
+    };
+    // A passage link opens its highlight, and a rendered link to a PDF, such as `[[book.pdf#page=2]]`, opens in the Reader at its page,
+    // reusing a Reader that already shows the PDF. Left to Obsidian, it would replace the note's tab with the native viewer, and the page would be lost
     // when routing swaps in the Reader. Capturing at the document runs before Obsidian's own link handler.
     const openPdfLink = (event: MouseEvent) => {
-      if (!this.routing || event.button !== 0) return;
-      const link = (event.target as Element | null)?.closest?.("a.internal-link");
+      if (event.button !== 0) return;
+      const target = event.target as Element | null;
+      // A passage link is opened here rather than handed to the operating system, which may not send it back to this Obsidian.
+      const passage = target?.closest?.("a[href^='obsidian://reader-plugin?']");
+      if (passage) {
+        event.preventDefault();
+        event.stopPropagation();
+        void openPassage(Object.fromEntries(new URL(passage.getAttribute("href")!).searchParams));
+        return;
+      }
+      if (!this.routing) return;
+      const link = target?.closest?.("a.internal-link");
       const href = link?.getAttribute("data-href") ?? link?.getAttribute("href");
       if (!href) return;
       const [path = "", subpath = ""] = href.split("#", 2);
@@ -232,17 +253,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       if (file instanceof TFile) bookNotes.renamed(file, oldPath);
       void store.rename(oldPath, file.path).catch(error => new Notice(`Could not update annotation source: ${error.message}`));
     }));
-    this.registerObsidianProtocolHandler("reader-plugin", async params => {
-      try {
-        const record = await store.find(params.document ?? "");
-        const file = record && this.app.vault.getAbstractFileByPath(record.sourcePath);
-        if (!record || !(file instanceof TFile)) { new Notice("The annotated PDF could not be found in this vault."); return; }
-        // A link to a highlight scrolls to it and pulses it; if it was deleted, the page still opens.
-        const annotation = record.annotations.find(candidate => candidate.id === params.annotation);
-        const reader = await open(file, annotation ? undefined : Number(params.page) || 1);
-        if (annotation && reader) await reader.showAnnotationWhenReady(annotation.id);
-      } catch (error) { new Notice(`Could not open annotation: ${String(error)}`); }
-    });
+    this.registerObsidianProtocolHandler("reader-plugin", params => void openPassage(params));
     this.addCommand({
       id: "check-development-setup",
       name: "Check development setup",

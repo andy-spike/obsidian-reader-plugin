@@ -1,6 +1,6 @@
 import { App, MarkdownView, normalizePath, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type { Annotation, AnnotationRecord, AnnotationStore } from "./annotations";
-import { defaultNoteHeader, fillTemplate, findSections, insertSection, noteFileName, placeComments, placedComments, quoteText, removeSection, type MovedComment, type SectionInput } from "./book-note";
+import { defaultNoteHeader, dropPdfLinks, fillTemplate, findSections, insertSection, noteFileName, placeComments, placedComments, quoteText, removeSection, type MovedComment, type SectionInput } from "./book-note";
 import type { ReaderSettings } from "./settings";
 
 const localDate = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; };
@@ -121,7 +121,7 @@ export class BookNotes {
 
   private async update(record: AnnotationRecord): Promise<TFile | null> {
     let file = this.file(record);
-    if (file) await this.app.vault.process(file, text => this.reconcile(text, record, file!.path));
+    if (file) await this.app.vault.process(file, text => this.reconcile(text, record));
     else if (record.annotations.length) file = await this.create(record);
     let changed = false;
     if (file) {
@@ -162,17 +162,16 @@ export class BookNotes {
     await this.app.fileManager.trashFile(old);
   }
 
-  private input(record: AnnotationRecord, annotation: Annotation, notePath: string): SectionInput {
-    const pdf = this.app.vault.getAbstractFileByPath(record.sourcePath);
-    const pdfLink = pdf instanceof TFile ? this.app.metadataCache.fileToLinktext(pdf, notePath, false) : record.sourcePath;
-    return { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact, pdfLink };
+  private input(record: AnnotationRecord, annotation: Annotation): SectionInput {
+    return { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact };
   }
 
   /**
    * Adds missing sections in reading order. Removes the section of a highlight deleted since the last update, only when nothing
    * is written under it and its quote is unchanged; sections of highlights this window never saw are left alone.
    */
-  private reconcile(text: string, record: AnnotationRecord, notePath: string): string {
+  private reconcile(text: string, record: AnnotationRecord): string {
+    text = dropPdfLinks(text);
     const ids = new Set(record.annotations.map(annotation => annotation.id));
     const known = this.quotes.get(record.documentId);
     for (const section of findSections(text).reverse()) {
@@ -187,7 +186,7 @@ export class BookNotes {
         const other = record.annotations.find(candidate => candidate.id === section.id);
         return other && byPosition(annotation, other) < 0;
       }) ?? null;
-      text = insertSection(text, this.input(record, annotation, notePath), later);
+      text = insertSection(text, this.input(record, annotation), later);
     }
     return placeComments(text, comments(record));
   }
@@ -209,7 +208,7 @@ export class BookNotes {
     let header = defaultNoteHeader(source);
     const template = this.settings().noteTemplate ? this.app.vault.getAbstractFileByPath(this.settings().noteTemplate) : null;
     if (template instanceof TFile) header = fillTemplate(await this.app.vault.read(template), { title, source, date: localDate() });
-    const file = await this.app.vault.create(path, this.reconcile(header.endsWith("\n") ? header : header + "\n", record, path));
+    const file = await this.app.vault.create(path, this.reconcile(header.endsWith("\n") ? header : header + "\n", record));
     if (template instanceof TFile) {
       await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => { frontmatter.source ??= source; });
     }
@@ -221,7 +220,7 @@ export class BookNotes {
   }
 
   private async adopt(file: TFile, record: AnnotationRecord): Promise<TFile> {
-    await this.app.vault.process(file, text => this.reconcile(text, record, file.path));
+    await this.app.vault.process(file, text => this.reconcile(text, record));
     return file;
   }
 

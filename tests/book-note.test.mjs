@@ -10,13 +10,13 @@ await build({ entryPoints: ["src/book-note.ts"], bundle: true, platform: "node",
 const note = await import(pathToFileURL(join(directory, "book-note.mjs")));
 after(() => rm(directory, { recursive: true, force: true }));
 
-const input = (id, page, quote = `Quote ${id}`) => ({ documentId: "doc-1", annotationId: id, page, quote, pdfLink: "Books/Book.pdf" });
+const input = (id, page, quote = `Quote ${id}`) => ({ documentId: "doc-1", annotationId: id, page, quote });
 const header = note.defaultNoteHeader("[[Books/Book.pdf]]");
 
 test("a section has the quote, both links, and a block ID", () => {
   const text = note.insertSection(header, input("a1", 34, "First line\nsecond line"), null);
   assert.equal(text, `${header}
-> [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=doc-1&annotation=a1&page=34) · [[Books/Book.pdf#page=34|PDF]]
+> [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=doc-1&annotation=a1&page=34)
 > First line
 > second line
 
@@ -113,4 +113,12 @@ test("comments move under their quotes once, and only placed ones count", () => 
   assert.deepEqual(note.findSections(text).map(section => section.writing), ["First\nsecond line", "Already written.\n\nA later thought"]);
   assert.equal(note.placeComments(text, comments), text);
   assert.deepEqual([...note.placedComments(text, comments)].sort(), ["a1", "a2"]);
+});
+
+test("the PDF link of earlier sections is removed, and nothing else", () => {
+  const old = `${header}\n> [!quote] p. 3 · [Open passage](obsidian://reader-plugin?document=d&annotation=x9&page=3) · [[Books/Book.pdf#page=3|PDF]]\n> quoted\n\n^x9\n\nMy link [[Books/Book.pdf#page=3|PDF]]\n`;
+  const text = note.dropPdfLinks(old);
+  assert.match(text, /&page=3\)\n> quoted/);
+  assert.match(text, /My link \[\[Books\/Book.pdf#page=3\|PDF\]\]/);
+  assert.equal(note.dropPdfLinks(text), text);
 });
