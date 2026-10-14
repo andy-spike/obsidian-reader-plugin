@@ -85,12 +85,14 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, store, () => this.reader, () => this.settings));
     /** Opens a PDF, reusing a Reader tab that already shows it. Returns the Reader, if it is one. */
     const open = async (file: TFile, page?: number, native = false): Promise<ReaderView | null> => {
-      const existing = native ? null : this.app.workspace.getLeavesOfType(READER_VIEW).find(leaf => (leaf.view as ReaderView).file === file);
+      // A tab not shown since Obsidian started is still a placeholder; its saved state names the file, and revealing it loads it.
+      const existing = native ? null : this.app.workspace.getLeavesOfType(READER_VIEW).find(leaf => leaf.getViewState().state?.file === file.path);
       if (existing) {
         await this.app.workspace.revealLeaf(existing);
         this.app.workspace.setActiveLeaf(existing, { focus: true });
-        if (page) (existing.view as ReaderView).goToPage(page);
-        return existing.view as ReaderView;
+        const reader = existing.view instanceof ReaderView ? existing.view : null;
+        if (page) reader?.goToPage(page);
+        return reader;
       }
       const leaf = this.app.workspace.getLeaf("tab");
       if (native) this.nativeTabs.set(leaf, file.path);
@@ -111,10 +113,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     }));
     // What you wrote in a book note shows as dots on highlights and previews in the sidebar, so redraw both when it changes.
     this.register(bookNotes.subscribe(documentId => {
-      this.app.workspace.getLeavesOfType(READER_VIEW).forEach(leaf => {
-        const reader = leaf.view as ReaderView;
-        if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations();
-      });
+      this.readers().forEach(reader => { if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations(); });
       refreshSidebar();
     }));
     this.addSettingTab(this.settingTab = new ReaderSettingTab(this.app, this));
@@ -162,15 +161,13 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.registerEvent(this.app.workspace.on("file-open", routePdfs));
     this.registerEvent(this.app.workspace.on("active-leaf-change", leaf => {
       routePdfs();
-      this.app.workspace.getLeavesOfType(READER_VIEW).forEach(readerLeaf => {
-        if (readerLeaf !== leaf) (readerLeaf.view as ReaderView).hidePopup();
-      });
+      this.readers().forEach(reader => { if (reader.leaf !== leaf) reader.hidePopup(); });
       if (leaf && leaf.view.getViewType() !== "pdf") this.nativeTabs.delete(leaf);
       // While you write in a book note, the sidebar keeps showing that book's highlights.
       const notePath = leaf?.view instanceof MarkdownView ? leaf.view.file?.path : undefined;
-      const noteReader = notePath ? this.app.workspace.getLeavesOfType(READER_VIEW).map(other => other.view as ReaderView).find(reader => reader.getRecord()?.notePath === notePath) : undefined;
+      const noteReader = notePath ? this.readers().find(reader => reader.getRecord()?.notePath === notePath) : undefined;
       if (leaf?.view instanceof ReaderView || noteReader) {
-        this.reader = noteReader ?? leaf!.view as ReaderView;
+        this.reader = noteReader ?? (leaf!.view as ReaderView);
         refreshSidebar();
       } else if (leaf && leaf.view.getViewType() !== ANNOTATIONS_VIEW && this.app.workspace.getMostRecentLeaf() === leaf) {
         this.reader = null;
@@ -346,8 +343,13 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     if (this.settingTab.containerEl.isConnected) this.settingTab.display();
   }
 
+  /** Open Reader views. Tabs not shown since Obsidian started are placeholders without the Reader's methods, so they are skipped. */
+  private readers(): ReaderView[] {
+    return this.app.workspace.getLeavesOfType(READER_VIEW).map(leaf => leaf.view).filter((view): view is ReaderView => view instanceof ReaderView);
+  }
+
   private applySettings(): void {
-    this.app.workspace.getLeavesOfType(READER_VIEW).forEach(leaf => (leaf.view as ReaderView).refreshSettings());
+    this.readers().forEach(reader => reader.refreshSettings());
     this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
   }
 
@@ -375,9 +377,14 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
 
   onunload(): void {
     this.routing = false;
-    // Closing the views below records their final positions; write them before the plugin goes away.
-    this.app.workspace.getLeavesOfType(READER_VIEW).forEach(leaf => (leaf.view as ReaderView).savePosition());
-    if (this.positionTimer !== undefined) void this.persist();
+    // Closing the views below records their final positions; write them before the plugin goes away. The cleanup after it
+    // must run even if that fails, or a copy of the plugin stays half-loaded beside the next one.
+    try {
+      this.readers().forEach(reader => reader.savePosition());
+      if (this.positionTimer !== undefined) void this.persist();
+    } catch (error) {
+      console.error("Reader Plugin: could not save reading positions while unloading.", error);
+    }
     this.store?.dispose();
     // Open reader and sidebar tabs stay where they are; Obsidian restores them when the plugin loads again, such as after an update or a rebuild.
     stopPdfWorker();
