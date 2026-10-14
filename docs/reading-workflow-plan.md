@@ -13,9 +13,9 @@ This document records the product interviews, latest product decisions, architec
 - One plugin Reader view renders both formats: bundled, pinned pdf.js for PDFs and pinned foliate-js for EPUBs. It does not patch Obsidian's built-in PDF viewer, which would depend on private APIs.
 - Selecting text shows a toolbar with **Highlight**, **Highlight + note**, and **Ask**. Each action is also a command that can be bound to a hotkey.
 - Each highlight has one highlight category: a color whose meaning the user sets in settings. Tags are deferred.
-- An Annotations panel in the sidebar lists the open document's highlights in reading order. It jumps to passages, edits passage notes inline, and lets the user undo a deletion. It is the only place annotations are edited.
+- The right sidebar shows the open document's book note: a quote for every highlight in reading order, colored like its highlight, with the user's writing under it. Quotes link back to their passages, and deleting a highlight from its popup offers undo.
 - The annotation record is authoritative. It is a documented JSON format with W3C-style selectors (quote with context, text position, EPUB CFI or PDF page location) stored in a vault folder, so it syncs with the vault.
-- The annotation file is regenerated in full from the record. Every highlight has a block ID, so the user's own notes can link to it. The user's freeform writing lives in separate notes.
+- Every highlight's section in the book note has a block ID, so the user's other notes can link to it or embed it. Each document has a book note the user owns, with a quote section per highlight; all writing about a passage goes under its quote there, and the plugin never edits that writing.
 - Each source document has a stable ID, its last-known path, and a content fingerprint. Renames inside Obsidian update the path, and the fingerprint reconnects files moved outside Obsidian. Moving annotations to a different edition requires the user's confirmation.
 - The plugin tracks both the current location and the furthest point read. The user can reset the furthest point read.
 
@@ -24,7 +24,7 @@ This document records the product interviews, latest product decisions, architec
 - The assistant appears in a sidebar and answers questions about a selected passage or the whole source document.
 - It runs through the user's installed, unmodified assistant CLI: Claude Code or Codex. The user picks one per conversation, with a default in settings, and a conversation stays with the CLI that started it. Authentication belongs entirely to the CLI, and the plugin never collects credentials.
 - The plugin supplies tools to search the source document, read passages and surrounding text, read the chapter list, and read highlights and passage notes. `get_annotations` returns the current document's annotations only. Claude Code receives them through a local MCP server; Codex normally receives them as dynamic tools over app-server. Normal operation exposes document tools and optional web research, without shell or file-editing tools. The Codex exec fallback has weaker tool restrictions, described below and shown in the setup check. A per-conversation switch turns web research off.
-- The assistant never changes annotations. A **Save as passage note** button lets the user keep an answer.
+- The assistant never changes annotations. A **Save to book note** button lets the user keep an answer under its passage.
 - Answers cite document passages with links that open them, link outside sources, and label the assistant's own interpretation.
 - The reading assistant can access the whole source document by default through document tools. The plugin does not send the whole source document with every question. Spoiler-safe mode, set per conversation, restricts every document tool to text before the furthest point read.
 - Conversation records are stored for each document in the vault, next to the annotation record. Recent conversations resume the CLI session. Older ones remain readable and can be continued through a summary.
@@ -64,7 +64,7 @@ An initial [live prototype](./research/book-context-prototype.md) completed thes
 
 - A 500-page EPUB or text PDF opens within 2 seconds.
 - Indexing runs in the background without freezing Obsidian. Keyword search is ready within about 30 seconds, and embeddings within a few minutes.
-- A new highlight appears in the annotation file within 1 second.
+- A new highlight appears in the book note within 1 second.
 - Every citation in an answer opens the cited passage, and that passage supports the associated claim.
 - Both assistant CLIs answer passage questions, comparisons between chapters, and questions about the whole source document using evidence supplied by document tools. Broad answers disclose incomplete coverage.
 - Spoiler-safe mode never returns text past the furthest point read.

@@ -10,16 +10,20 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "pnpm typecheck && node esbuild.config.mjs production",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "dev:setup": "node scripts/dev-vault.mjs",
     "dev:open": "node scripts/open-dev-vault.mjs",
-    "worktree:setup": "wt hook pre-start --yes",
+    "headless": "node scripts/headless.mjs",
+    "worktree:setup": "pnpm install --frozen-lockfile && pnpm build",
     "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
+    "esbuild-svelte": "^0.9.5",
     "obsidian": "^1.13.1",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.6",
     "typescript": "~5.9.3"
   },
   "dependencies": {

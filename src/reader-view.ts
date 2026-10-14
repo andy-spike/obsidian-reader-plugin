@@ -1,10 +1,15 @@
-import { App, FileView, Menu, Notice, setTooltip, SuggestModal, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { FileView, Menu, Scope, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { randomUUID } from "node:crypto";
 import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
+import type { NotePlace } from "./settings";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
-import { colorOf, ReaderSettings } from "./settings";
-import { deleteAnnotation, iconButton } from "./ui";
+import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
+import { checkMenu, colorMenu, deleteAnnotation } from "./ui";
+import { OutlineModal } from "./outline-modal";
+import type { OutlineNode } from "./components/OutlineTree.svelte";
+import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
+import { mount, unmount } from "svelte";
 
 export const READER_VIEW = "reader-plugin-pdf";
 /** PDF points to CSS pixels, so 100% matches the printed page size like other PDF viewers. */
@@ -35,13 +40,29 @@ interface PageSlot {
   token: number;
   busy: boolean;
 }
+/** A page, how far down it the view's top edge is (0–1), and the zoom: a number or a fit mode. */
+export interface ReadingPosition { page: number; offset: number; zoom: number | "width" | "page" }
+
 export interface ReaderHost {
   store: AnnotationStore;
   settings(): ReaderSettings;
   ready(reader: ReaderView): void;
-  showAnnotations(): void;
+  /** Shows or hides the book note, in the place from settings unless one is given. */
+  toggleAnnotations(place?: NotePlace): void;
+  /** Turns highlight mode on or off for every Reader. */
+  toggleHighlightMode(): void;
+  /** Sets the color highlight mode uses and turns the mode on. */
+  chooseHighlightModeColor(id: string): void;
   openNative(file: TFile): void;
+  /** Opens this PDF's book note, at a passage's section when given. */
+  openNote(reader: ReaderView, annotationId: string | null, place?: NotePlace): void;
+  /** What the reader wrote under a passage in the book note, or an empty string. */
+  writing(record: AnnotationRecord, annotationId: string): string;
+  lastPosition(path: string): ReadingPosition | undefined;
+  rememberPosition(path: string, position: ReadingPosition): void;
 }
+
+const titleOf = (path: unknown): string => typeof path === "string" ? path.split("/").pop()!.replace(/\.pdf$/i, "") : "";
 
 export class ReaderView extends FileView {
   private pdf: PDFDocumentProxy | null = null;
@@ -61,27 +82,32 @@ export class ReaderView extends FileView {
   private frame = 0;
   private passages: Passage[] = [];
   private lastColor = "";
-  private pointer = { x: 0, y: 0, down: false };
+  private pointer = { x: 0, y: 0, down: false, dismissed: false };
   private hovered: string | null = null;
   private flashing: string | null = null;
   private stage!: HTMLElement;
   private pages!: HTMLElement;
   private message!: HTMLElement;
+  /** While a PDF opens, its pages and controls stay invisible until the pages in view are drawn, so they appear at once. */
+  private openingTimer: number | undefined;
+  private messageTimer: number | undefined;
   private hint!: HTMLElement;
-  private pageInput!: HTMLInputElement;
-  private pageTotal!: HTMLElement;
-  private previous!: HTMLButtonElement;
-  private next!: HTMLButtonElement;
-  private zoomLevel!: HTMLButtonElement;
-  private zoomOutButton!: HTMLButtonElement;
-  private zoomInButton!: HTMLButtonElement;
-  private resetButton!: HTMLButtonElement;
+  private toastEl: HTMLElement | null = null;
+  private toastTimer: number | undefined;
+  private controls!: ReturnType<typeof mount<Record<string, unknown>, { update(state: ControlsState): void }>>;
   private outlineAction!: HTMLElement;
+  private modeAction!: HTMLElement;
   private popup!: AnnotationPopup;
 
-  constructor(leaf: WorkspaceLeaf, private host: ReaderHost) { super(leaf); }
+  /** The file name to show until the PDF has loaded, so the tab title doesn't change while it opens. */
+  private pendingTitle: string;
+  constructor(leaf: WorkspaceLeaf, private host: ReaderHost) {
+    super(leaf);
+    // A tab moved here from Obsidian's PDF viewer still shows that file while this view is created.
+    this.pendingTitle = titleOf(leaf.getViewState().state?.file);
+  }
   getViewType(): string { return READER_VIEW; }
-  getDisplayText(): string { return this.file?.basename ?? "PDF Reader"; }
+  getDisplayText(): string { return this.file?.basename ?? this.pendingTitle; }
   getIcon(): string { return "book-open"; }
   canAcceptExtension(extension: string): boolean { return extension === "pdf"; }
   getRecord(): AnnotationRecord | null { return this.record; }
@@ -95,6 +121,7 @@ export class ReaderView extends FileView {
   }
 
   async setState(state: Record<string, unknown>, result: ViewStateResult): Promise<void> {
+    this.pendingTitle = titleOf(state.file) || this.pendingTitle;
     const page = typeof state.page === "number" ? state.page : undefined;
     const offset = typeof state.offset === "number" ? state.offset : undefined;
     this.restore = page !== undefined || state.zoom !== undefined ? { page, offset, zoom: state.zoom } : null;
@@ -113,8 +140,26 @@ export class ReaderView extends FileView {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("reader-view");
-    this.addAction("highlighter", "Show annotations", () => this.host.showAnnotations());
-    this.outlineAction = this.addAction("list", "Table of contents", () => void this.openOutline());
+    // Each action is placed before the previous one, so they show in the reverse of this order.
+    const noteAction = this.addAction("notebook-pen", "Toggle book note (A)", () => this.host.toggleAnnotations());
+    // Right-click opens the note in either place this once, whatever the setting says.
+    noteAction.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      const current = this.host.settings().notePlace;
+      const menu = new Menu();
+      for (const [place, title, icon] of [["sidebar", "Open in the right sidebar", "panel-right"], ["beside", "Open beside the PDF", "columns-2"]] as const) {
+        menu.addItem(item => item.setTitle(title).setIcon(icon).setChecked(place === current).onClick(() => this.host.openNote(this, null, place)));
+      }
+      menu.showAtMouseEvent(event);
+    });
+    this.modeAction = this.addAction("highlighter", "", () => this.host.toggleHighlightMode());
+    this.modeAction.addClass("reader-mode-action");
+    this.modeAction.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      colorMenu(this.host.settings().colors, this.modeColor().id, id => this.host.chooseHighlightModeColor(id)).showAtMouseEvent(event);
+    });
+    this.showHighlightMode();
+    this.outlineAction = this.addAction("list", "Table of contents (T)", () => void this.openOutline());
     this.outlineAction.hide();
 
     this.stage = contentEl.createDiv({ cls: "reader-stage", attr: { tabindex: "-1" } });
@@ -122,7 +167,7 @@ export class ReaderView extends FileView {
     this.message = this.stage.createDiv({ cls: "reader-message" });
     this.hint = contentEl.createDiv({ cls: "reader-hint", text: "This PDF has no selectable text. Run OCR on it to highlight passages." });
     this.hint.hide();
-    this.popup = new AnnotationPopup(this.pages, this.stage, CONTROLS_CLEARANCE);
+    this.popup = new AnnotationPopup(this.pages, this.stage, CONTROLS_CLEARANCE, () => this.previewColor(null));
     this.register(() => this.popup.destroy());
     this.buildControls();
 
@@ -146,50 +191,54 @@ export class ReaderView extends FileView {
     this.register(() => observer.disconnect());
     this.register(() => {
       window.clearTimeout(this.settleTimer);
+      window.clearTimeout(this.openingTimer);
+      window.clearTimeout(this.messageTimer);
+      window.clearTimeout(this.toastTimer);
       if (this.frame) cancelAnimationFrame(this.frame);
     });
     this.register(this.host.store.subscribe(record => { if (record === this.record) this.refreshAnnotations(); }));
     this.bindSelection();
+    this.bindKeys();
   }
 
   private buildControls(): void {
-    const controls = this.contentEl.createDiv({ cls: "reader-controls", attr: { role: "toolbar", "aria-label": "Page and zoom" } });
-    this.previous = iconButton(controls, "chevron-up", "Previous page", () => this.step(-1), "top");
-    this.pageInput = controls.createEl("input", { cls: "reader-page-input", attr: { type: "text", inputmode: "numeric", "aria-label": "Page number" } });
-    this.pageTotal = controls.createSpan({ cls: "reader-page-total" });
-    this.next = iconButton(controls, "chevron-down", "Next page", () => this.step(1), "top");
-    this.pageInput.addEventListener("focus", () => this.pageInput.select());
-    this.pageInput.addEventListener("keydown", event => {
-      if (event.key === "Enter") {
-        const page = Number.parseInt(this.pageInput.value, 10);
-        if (Number.isFinite(page)) this.goToPage(page);
-        this.stage.focus({ preventScroll: true });
-      } else if (event.key === "Escape") this.stage.focus({ preventScroll: true });
-    });
-    this.pageInput.addEventListener("blur", () => { this.pageInput.value = String(this.page); });
-    controls.createDiv({ cls: "reader-controls-divider" });
-    this.zoomOutButton = iconButton(controls, "minus", "Zoom out", () => this.zoomBy(-1), "top");
-    this.zoomLevel = controls.createEl("button", { cls: "reader-zoom-level", attr: { type: "button" } });
-    setTooltip(this.zoomLevel, "Zoom options", { placement: "top" });
-    this.zoomLevel.addEventListener("click", () => {
-      const menu = new Menu();
-      const option = (title: string, checked: boolean, choose: () => void) => menu.addItem(item => item.setTitle(title).setChecked(checked).onClick(choose));
-      option("Fit width", this.fit === "width", () => this.setZoom(this.fitZoom("width"), "width"));
-      option("Fit page", this.fit === "page", () => this.setZoom(this.fitZoom("page"), "page"));
-      menu.addSeparator();
-      for (const zoom of ZOOM_PRESETS) option(`${Math.round(zoom * 100)}%`, !this.fit && Math.abs(this.zoom - zoom) < 0.005, () => this.setZoom(zoom, null));
-      const rect = this.zoomLevel.getBoundingClientRect();
-      menu.showAtPosition({ x: rect.left, y: rect.top, width: rect.width, left: true });
-    });
-    this.zoomInButton = iconButton(controls, "plus", "Zoom in", () => this.zoomBy(1), "top");
-    this.resetButton = iconButton(controls, "rotate-ccw", "Reset zoom (fit width)", () => this.resetZoom(), "top");
+    const toStage = () => this.stage.focus({ preventScroll: true });
+    this.controls = mount(ReaderControls, { target: this.contentEl, props: {
+      step: delta => this.step(delta),
+      goToPage: page => this.goToPage(page),
+      done: toStage,
+      zoomBy: direction => this.zoomBy(direction),
+      reset: () => this.resetZoom(),
+      zoomMenu: rect => {
+        const menu = checkMenu();
+        const option = (title: string, checked: boolean, choose: () => void) => menu.addItem(item => item.setTitle(title).setChecked(checked).onClick(choose));
+        option("Fit width", this.fit === "width", () => this.setZoom(this.fitZoom("width"), "width"));
+        option("Fit page", this.fit === "page", () => this.setZoom(this.fitZoom("page"), "page"));
+        menu.addSeparator();
+        for (const zoom of ZOOM_PRESETS) option(`${Math.round(zoom * 100)}%`, !this.fit && Math.abs(this.zoom - zoom) < 0.005, () => this.setZoom(zoom, null));
+        // Anchored just above the zoom level: the bar sits at the bottom, so Obsidian flips the menu to open upward from
+        // here. Obsidian lines the menu up with the left edge, so it is then moved to sit centered over the zoom level.
+        const doc = this.contentEl.ownerDocument;
+        doc.querySelectorAll(".tooltip").forEach(tip => tip.remove());
+        menu.showAtPosition({ x: rect.left, y: rect.top - 6, width: rect.width, overlap: true }, doc);
+        const dom = (menu as Menu & { dom?: HTMLElement }).dom;
+        if (dom) {
+          const max = doc.documentElement.clientWidth - dom.offsetWidth - 8;
+          dom.style.left = `${Math.max(8, Math.min(max, rect.left + (rect.width - dom.offsetWidth) / 2))}px`;
+        }
+      },
+    } });
+    this.register(() => void unmount(this.controls));
     this.updateControls();
   }
 
   async onLoadFile(file: TFile): Promise<void> {
     await this.disposePdf();
     const generation = ++this.generation;
-    this.showMessage("Opening PDF…");
+    this.contentEl.addClass("is-opening");
+    // Most PDFs open quickly; the message only appears for slow ones, so it doesn't flash.
+    window.clearTimeout(this.messageTimer);
+    this.messageTimer = window.setTimeout(() => { if (generation === this.generation && !this.pdf) this.showMessage("Opening PDF…"); }, 600);
     try {
       const data = await this.app.vault.readBinary(file);
       if (generation !== this.generation) return;
@@ -200,22 +249,49 @@ export class ReaderView extends FileView {
       const first = await pdf.getPage(1);
       if (generation !== this.generation) return;
       this.pdf = pdf;
+      window.clearTimeout(this.messageTimer);
       this.message.hide();
+      // Shown anyway if drawing takes long, such as for a heavy first page.
+      window.clearTimeout(this.openingTimer);
+      this.openingTimer = window.setTimeout(() => this.reveal(), 1500);
       this.buildPages(first);
       this.ready();
-      if (!this.restore) this.restore = {};
+      // A tab restored by Obsidian carries its own position. A newly opened tab continues where this PDF was last read.
+      if (!this.restore) this.restore = { ...this.host.lastPosition(file.path) };
       this.applyRestore();
       void this.checkText(generation);
       void pdf.getOutline().then(outline => { if (generation === this.generation) this.outlineAction.toggle(!!outline?.length); }).catch(() => {});
     } catch (error) {
       if (generation !== this.generation) return;
+      window.clearTimeout(this.messageTimer);
+      this.reveal();
       this.showMessage(`Could not open this PDF. ${error instanceof Error ? error.message : String(error)}`, true);
     }
   }
-  async onUnloadFile(): Promise<void> { await this.disposePdf(); }
-  async onClose(): Promise<void> { await this.disposePdf(); }
+  async onUnloadFile(): Promise<void> { this.savePosition(); await this.disposePdf(); }
+  async onClose(): Promise<void> { this.savePosition(); await this.disposePdf(); }
+
+  /** Records where this PDF is being read. Skipped while a requested position is still waiting to be applied. */
+  savePosition(): void {
+    if (!this.file || !this.pdf || this.restore) return;
+    const position = this.measurePosition() ?? this.position;
+    if (position) this.host.rememberPosition(this.file.path, { ...position, zoom: this.fit ?? this.zoom });
+  }
 
   private ready(): void { this.host.ready(this); }
+
+  private reveal(): void {
+    window.clearTimeout(this.openingTimer);
+    this.contentEl.removeClass("is-opening");
+  }
+
+  /** Ends the opening state once every page in view has been drawn at the position the PDF opens at. */
+  private revealIfDrawn(): void {
+    if (!this.contentEl.hasClass("is-opening") || this.restore || !this.stage.clientHeight) return;
+    const top = this.stage.scrollTop, bottom = top + this.stage.clientHeight;
+    const inView = this.slots.slice(this.slotAt(top), this.slotAt(bottom) + 1);
+    if (inView.every(slot => slot.canvas && slot.renderedZoom === this.zoom)) this.reveal();
+  }
 
   private showMessage(text: string, error = false): void {
     this.message.empty();
@@ -321,23 +397,17 @@ export class ReaderView extends FileView {
   }
 
   private setCurrentPage(page: number): void {
-    if (page === this.page && this.pageInput.value) return;
+    if (page === this.page && this.slots.length) return;
     this.page = page;
     this.updateControls();
     this.app.workspace.requestSaveLayout();
   }
 
   private updateControls(): void {
-    const total = this.slots.length;
-    if (this.pageInput.ownerDocument.activeElement !== this.pageInput) this.pageInput.value = total ? String(this.page) : "";
-    this.pageInput.style.width = `${Math.max(2, String(total).length) + 1.5}ch`;
-    this.pageTotal.setText(total ? `/ ${total}` : "");
-    this.previous.disabled = !total || (this.page <= 1 && (this.stage?.scrollTop ?? 0) <= 8);
-    this.next.disabled = !total || this.page >= total;
-    this.zoomLevel.setText(`${Math.round(this.zoom * 100)}%`);
-    this.zoomOutButton.disabled = this.zoom <= MIN_ZOOM;
-    this.zoomInButton.disabled = this.zoom >= MAX_ZOOM;
-    this.resetButton.disabled = this.fit === "width";
+    this.controls?.update({
+      page: this.page, total: this.slots.length, atStart: this.page <= 1 && (this.stage?.scrollTop ?? 0) <= 8,
+      zoom: this.zoom, canZoomOut: this.zoom > MIN_ZOOM, canZoomIn: this.zoom < MAX_ZOOM, fitWidth: this.fit === "width",
+    });
   }
 
   // ---- Zoom ----
@@ -406,8 +476,9 @@ export class ReaderView extends FileView {
     const top = this.stage.scrollTop, height = this.stage.clientHeight;
     if (!height) return;
     this.position = this.measurePosition();
+    this.savePosition();
     this.setCurrentPage(this.slots[this.slotAt(top + height * 0.3)]!.number);
-    this.previous.disabled = this.page <= 1 && top <= 8;
+    this.updateControls();
     const first = this.slotAt(top - height), last = this.slotAt(top + height * 2);
     for (const slot of [...this.active]) if (slot.number - 1 < first - 2 || slot.number - 1 > last + 2) this.releasePage(slot);
     const visible = this.slotAt(top);
@@ -451,6 +522,7 @@ export class ReaderView extends FileView {
       slot.el.prepend(canvas);
       slot.canvas = canvas;
       slot.renderedZoom = zoom;
+      this.revealIfDrawn();
       if (slot.text) slot.text.layer.update({ viewport });
       else {
         const content = await page.getTextContent();
@@ -519,9 +591,19 @@ export class ReaderView extends FileView {
         Object.assign(mark.style, { left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.width * 100}%`, height: `${r.height * 100}%` });
         mark.toggleClass("is-hovered", a.id === this.hovered);
         mark.toggleClass("is-flashing", a.id === this.flashing);
-        if (a.comment && index === a.rects.length - 1) mark.createDiv({ cls: "reader-mark-note" });
+        if (index === a.rects.length - 1 && this.writing(a.id)) mark.createDiv({ cls: "reader-mark-note" });
       });
     }
+  }
+
+  /** What the reader wrote under a passage in the book note, or an empty string. */
+  writing(annotationId: string): string {
+    return this.record ? this.host.writing(this.record, annotationId) : "";
+  }
+
+  /** Opens the book note at a passage's section, or at the top. */
+  openNote(annotationId: string | null): void {
+    this.host.openNote(this, annotationId);
   }
 
   refreshAnnotations(): void {
@@ -560,6 +642,35 @@ export class ReaderView extends FileView {
     this.pages.querySelectorAll<HTMLElement>(".reader-mark").forEach(mark => mark.toggleClass("is-hovered", mark.dataset.id === id));
   }
 
+  /**
+   * Shows a short confirmation just above the page and zoom bar, where the reader is already looking, instead of in Obsidian's notice corner.
+   * A new message replaces the current one, and it stays while the pointer is over it.
+   */
+  toast(message: string): void {
+    this.toastEl?.remove();
+    window.clearTimeout(this.toastTimer);
+    const el = this.toastEl = this.contentEl.createDiv({ cls: "reader-toast", attr: { role: "status" } });
+    el.createSpan({ text: message });
+    const close = () => {
+      window.clearTimeout(this.toastTimer);
+      el.remove();
+      if (this.toastEl === el) this.toastEl = null;
+    };
+    const arm = () => { this.toastTimer = window.setTimeout(close, 2500); };
+    el.addEventListener("pointerenter", () => window.clearTimeout(this.toastTimer));
+    el.addEventListener("pointerleave", arm);
+    arm();
+  }
+
+  /** Like `showAnnotation`, for a tab that may still be opening: waits until the PDF is laid out and its saved position applied. */
+  async showAnnotationWhenReady(id: string): Promise<void> {
+    for (let waited = 0; waited < 10000; waited += 100) {
+      const annotation = this.pdf && !this.restore ? this.record?.annotations.find(candidate => candidate.id === id) : undefined;
+      if (annotation) return this.showAnnotation(annotation);
+      await new Promise(resolve => window.setTimeout(resolve, 100));
+    }
+  }
+
   /** Scrolls a highlight into view from the sidebar and briefly pulses it. */
   async showAnnotation(annotation: Annotation): Promise<void> {
     await this.app.workspace.revealLeaf(this.leaf);
@@ -578,14 +689,46 @@ export class ReaderView extends FileView {
     }, 1600);
   }
 
+  // ---- Keyboard ----
+
+  /**
+   * Single-key shortcuts while this Reader is the active tab, like Obsidian's own views, so they can't clash with global
+   * hotkeys. They stand aside while you type in a field, such as the page number. Each also exists as a command for hotkeys.
+   */
+  private bindKeys(): void {
+    this.scope = new Scope(this.app.scope);
+    const key = (modifiers: ("Shift")[], name: string, run: () => void) => this.scope!.register(modifiers, name, event => {
+      if ((event.target as HTMLElement | null)?.closest?.("input, textarea, [contenteditable='true']")) return true;
+      run();
+      return false;
+    });
+    key([], "h", () => this.host.toggleHighlightMode());
+    // N highlights a selection and opens its section, opens the section of the highlight whose popup is showing, or opens the note.
+    key([], "n", () => this.readSelection().length ? this.addHighlight(true) : this.host.openNote(this, this.popup.mode === "annotation" ? this.popup.annotation?.id ?? null : null));
+    key([], "a", () => this.host.toggleAnnotations());
+    key([], "t", () => void this.openOutline());
+    key([], "g", () => this.contentEl.querySelector<HTMLInputElement>(".reader-page-input")?.select());
+    key([], "=", () => this.zoomBy(1));
+    key(["Shift"], "+", () => this.zoomBy(1));
+    key([], "-", () => this.zoomBy(-1));
+    key([], "0", () => this.resetZoom());
+    for (const name of ["Delete", "Backspace"]) key([], name, () => {
+      const annotation = this.popup.mode === "annotation" ? this.popup.annotation : null;
+      if (!annotation || !this.record) return;
+      this.popup.hide();
+      deleteAnnotation(this.host.store, this.record, annotation);
+    });
+  }
+
   // ---- Selection and popup ----
 
   private bindSelection(): void {
     const doc = this.contentEl.ownerDocument;
     this.registerDomEvent(this.stage, "pointerdown", event => {
       if (event.button !== 0 || this.popup.contains(event.target as Node)) return;
-      this.pointer = { x: event.clientX, y: event.clientY, down: true };
-      this.popup.hide();
+      // A click away from a selection popup only dismisses it; it does not also open a highlight's popup.
+      this.pointer = { x: event.clientX, y: event.clientY, down: true, dismissed: this.popup.mode === "selection" };
+      this.dismissPopup();
       (event.target as HTMLElement).closest(".textLayer")?.addClass("selecting");
     });
     this.registerDomEvent(doc, "pointerup", event => {
@@ -593,16 +736,19 @@ export class ReaderView extends FileView {
       this.pointer.down = false;
       this.pages.querySelectorAll(".textLayer.selecting").forEach(layer => layer.removeClass("selecting"));
       this.passages = this.readSelection();
-      if (this.passages.length) {
+      if (this.passages.length && this.host.settings().highlightMode) {
+        // Highlight mode: a finished mouse selection becomes a highlight in the mode's color, without the popup.
+        this.createHighlights(this.modeColor().id, false);
+      } else if (this.passages.length) {
         const bounds = doc.getSelection()!.getRangeAt(0).getBoundingClientRect();
         this.showSelectionPopup({ clientX: event.clientX, top: event.clientY, bottom: event.clientY, above: event.clientY < bounds.top + bounds.height / 2 });
-      } else if (Math.hypot(event.clientX - this.pointer.x, event.clientY - this.pointer.y) < 4) {
+      } else if (!this.pointer.dismissed && Math.hypot(event.clientX - this.pointer.x, event.clientY - this.pointer.y) < 4) {
         const hit = this.annotationAt(event.clientX, event.clientY);
-        if (hit) this.showAnnotationPopup(hit.annotation, this.anchorFor(hit.annotation, event.clientX), false);
+        if (hit) this.showAnnotationPopup(hit.annotation, this.anchorFor(hit.annotation, event.clientX));
       }
     });
     this.registerDomEvent(doc, "pointerdown", event => {
-      if (this.popup.open && !this.popup.contains(event.target as Node) && !this.stage.contains(event.target as Node)) this.popup.hide();
+      if (this.popup.open && !this.popup.contains(event.target as Node) && !this.stage.contains(event.target as Node)) this.dismissPopup();
     });
     this.registerDomEvent(doc, "selectionchange", () => {
       if (this.pointer.down) {
@@ -625,9 +771,15 @@ export class ReaderView extends FileView {
       }
     });
     this.registerDomEvent(doc, "keydown", event => {
-      if (event.key !== "Escape" || !this.popup.open || this.app.workspace.getActiveViewOfType(ReaderView) !== this) return;
-      if (this.popup.mode === "selection") doc.getSelection()?.removeAllRanges();
-      this.popup.hide();
+      if (!this.popup.open || this.app.workspace.getActiveViewOfType(ReaderView) !== this) return;
+      if (event.key === "Escape") this.dismissPopup();
+      // Number keys pick a color from the selection popup, matching the order shown in its tooltips.
+      else if (this.popup.mode === "selection" && /^[1-9]$/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && !(event.target as HTMLElement).closest?.("input, textarea, [contenteditable]")) {
+        const color = this.host.settings().colors[Number(event.key) - 1];
+        if (!color) return;
+        event.preventDefault();
+        this.createHighlights(color.id, false);
+      }
     });
     let hoverFrame = 0;
     this.registerDomEvent(this.stage, "pointermove", event => {
@@ -638,6 +790,15 @@ export class ReaderView extends FileView {
       });
     });
     this.registerDomEvent(this.stage, "pointerleave", () => this.setHovered(null));
+  }
+
+  /** Closes the popup. A selection popup also clears its selection, which Obsidian's unselectable UI would otherwise keep. */
+  private dismissPopup(): void {
+    if (this.popup.mode === "selection") {
+      this.passages = [];
+      this.contentEl.ownerDocument.getSelection()?.removeAllRanges();
+    }
+    this.popup.hide();
   }
 
   /** Converts the DOM selection into one passage per page it touches. */
@@ -702,41 +863,47 @@ export class ReaderView extends FileView {
     const colors = this.host.settings().colors;
     if (!colors.some(color => color.id === this.lastColor)) this.lastColor = colors[0]!.id;
     this.popup.showSelection(at, colors, this.lastColor, {
-      highlight: color => this.createHighlights(color, false, at),
-      comment: () => this.createHighlights(this.lastColor, true, at),
+      highlight: color => this.createHighlights(color, false),
+      note: () => this.createHighlights(this.lastColor, true),
       copy: () => this.copy(this.passages.map(p => p.quote.exact).join(" ")),
+      preview: color => this.previewColor(color),
     });
   }
 
-  private showAnnotationPopup(annotation: Annotation, at: PopupAnchor, focusComment: boolean): void {
+  private previewColor(id: string | null): void {
+    const color = id ? this.host.settings().colors.find(option => option.id === id) : null;
+    this.pages.toggleClass("is-previewing", !!color);
+    if (color) this.pages.style.setProperty("--reader-preview", color.value);
+  }
+
+  private showAnnotationPopup(annotation: Annotation, at: PopupAnchor): void {
     this.popup.showAnnotation(at, annotation, this.host.settings().colors, {
       recolor: color => {
         annotation.color = this.lastColor = color;
         void this.persist();
       },
-      comment: text => {
-        annotation.comment = text;
-        void this.persist();
+      note: () => {
+        this.popup.hide();
+        this.openNote(annotation.id);
       },
       copy: () => this.copy(annotation.quote.exact),
       remove: () => {
         this.popup.hide();
         if (this.record) deleteAnnotation(this.host.store, this.record, annotation);
       },
-    }, focusComment);
+    });
   }
 
   /** Highlights the current selection. Used by the popup and by the highlight commands. */
-  addHighlight(withComment: boolean): void {
+  addHighlight(withNote: boolean): void {
     this.passages = this.readSelection();
-    const rects = this.passages.length ? this.contentEl.ownerDocument.getSelection()!.getRangeAt(0).getClientRects() : null;
-    const last = rects?.item(rects.length - 1);
-    if (!last) { new Notice("Select a passage in the PDF first."); return; }
+    if (!this.passages.length) { this.toast("Select a passage in the PDF first."); return; }
     if (!this.host.settings().colors.some(color => color.id === this.lastColor)) this.lastColor = this.host.settings().colors[0]!.id;
-    this.createHighlights(this.lastColor, withComment, { clientX: last.right, top: last.top, bottom: last.bottom, above: false });
+    this.createHighlights(this.lastColor, withNote);
   }
 
-  private createHighlights(color: string, withComment: boolean, at: PopupAnchor): void {
+  /** Highlights the selected passages. With `withNote`, opens the book note at the first one's section to write about it. */
+  private createHighlights(color: string, withNote: boolean): void {
     if (!this.record || !this.passages.length) return;
     const createdAt = new Date().toISOString();
     const created = this.passages.map(passage => ({ ...passage, id: randomUUID(), color, comment: "", createdAt }));
@@ -745,12 +912,12 @@ export class ReaderView extends FileView {
     this.passages = [];
     this.contentEl.ownerDocument.getSelection()?.removeAllRanges();
     void this.persist();
-    if (withComment) this.showAnnotationPopup(created[created.length - 1]!, this.anchorFor(created[created.length - 1]!, at.clientX), true);
-    else this.popup.hide();
+    this.popup.hide();
+    if (withNote) this.openNote(created[0]!.id);
   }
 
   private copy(text: string): void {
-    void navigator.clipboard.writeText(text.replace(/\s+/g, " ").trim()).then(() => new Notice("Copied to clipboard."));
+    void navigator.clipboard.writeText(text.replace(/\s+/g, " ").trim()).then(() => this.toast("Copied to clipboard."));
     this.popup.hide();
   }
 
@@ -763,6 +930,22 @@ export class ReaderView extends FileView {
   refreshSettings(): void {
     for (const slot of this.active) this.drawMarks(slot);
     this.popup.sync(this.host.settings().colors);
+    this.showHighlightMode();
+  }
+
+  /** Highlight mode's color, or the first color if the chosen one was removed. */
+  private modeColor(): HighlightColor {
+    const colors = this.host.settings().colors;
+    return colors.find(color => color.id === this.host.settings().highlightModeColor) ?? colors[0]!;
+  }
+
+  private showHighlightMode(): void {
+    const on = this.host.settings().highlightMode;
+    const color = this.modeColor();
+    this.modeAction.toggleClass("is-active", on);
+    this.modeAction.style.setProperty("--reader-mode-color", color.value);
+    this.modeAction.setAttribute("aria-pressed", String(on));
+    this.modeAction.setAttribute("aria-label", `${on ? "Highlight mode is on" : "Turn on highlight mode"}: selecting text highlights it in ${color.name}. Right-click to choose the color. (H)`);
   }
 
   private async persist(): Promise<void> {
@@ -775,19 +958,27 @@ export class ReaderView extends FileView {
     const pdf = this.pdf;
     if (!pdf) return;
     const outline = await pdf.getOutline().catch(() => null);
-    if (!outline?.length) { new Notice("This PDF has no table of contents."); return; }
-    const entries: OutlineEntry[] = [];
-    const walk = (items: typeof outline, depth: number) => {
+    if (!outline?.length) { this.toast("This PDF has no table of contents."); return; }
+    const nodes: OutlineNode[] = [];
+    const targets: Promise<{ page: number; offset: number } | null>[] = [];
+    const walk = (items: typeof outline, depth: number, parent: number | null) => {
       for (const item of items) {
-        entries.push({ title: item.title.trim() || "Untitled", depth, target: this.resolveDestination(pdf, item.dest).catch(() => null) });
-        if (item.items?.length) walk(item.items, depth + 1);
+        const node: OutlineNode = { id: nodes.length, title: item.title.trim() || "Untitled", depth, parent, children: [] };
+        nodes.push(node);
+        targets.push(this.resolveDestination(pdf, item.dest).catch(() => null));
+        if (parent !== null) nodes[parent]!.children.push(node.id);
+        if (item.items?.length) walk(item.items, depth + 1, node.id);
       }
     };
-    walk(outline, 0);
-    await Promise.all(entries.map(async entry => { entry.page = (await entry.target)?.page; }));
+    walk(outline, 0, null);
+    const resolved = await Promise.all(targets);
+    resolved.forEach((target, id) => { nodes[id]!.page = target?.page; });
     if (pdf !== this.pdf) return;
-    new OutlineModal(this.app, entries, async entry => {
-      const target = await entry.target;
+    // The section being read is the last one that starts on or before the current page.
+    let current: number | null = null;
+    for (const node of nodes) if (node.page !== undefined && node.page <= this.page && (current === null || node.page >= nodes[current]!.page!)) current = node.id;
+    new OutlineModal(this.app, nodes, current, node => {
+      const target = resolved[node.id];
       if (target && pdf === this.pdf) this.goToPage(target.page, target.offset);
     }).open();
   }
@@ -803,26 +994,4 @@ export class ReaderView extends FileView {
     const top = explicit[1]?.name === "XYZ" && typeof explicit[3] === "number" ? explicit[3] : null;
     return { page: index + 1, offset: top !== null && slot ? Math.max(0, Math.min(1, (slot.height - top) / slot.height)) : 0 };
   }
-}
-
-interface OutlineEntry { title: string; depth: number; target: Promise<{ page: number; offset: number } | null>; page?: number }
-
-class OutlineModal extends SuggestModal<OutlineEntry> {
-  constructor(app: App, private entries: OutlineEntry[], private choose: (entry: OutlineEntry) => void) {
-    super(app);
-    this.setPlaceholder("Jump to a chapter or section");
-    this.limit = 500;
-  }
-  getSuggestions(query: string): OutlineEntry[] {
-    const needle = query.trim().toLowerCase();
-    return needle ? this.entries.filter(entry => entry.title.toLowerCase().includes(needle)) : this.entries;
-  }
-  renderSuggestion(entry: OutlineEntry, el: HTMLElement): void {
-    el.addClass("reader-outline-item");
-    el.style.paddingInlineStart = `calc(var(--size-4-3) + ${entry.depth * 16}px)`;
-    el.createSpan({ cls: "reader-outline-title", text: entry.title });
-    if (entry.page) el.createSpan({ cls: "reader-outline-page", text: String(entry.page) });
-    if (entry.depth === 0) el.addClass("is-top-level");
-  }
-  onChooseSuggestion(entry: OutlineEntry): void { this.choose(entry); }
 }

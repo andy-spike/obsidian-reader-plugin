@@ -13,27 +13,26 @@ function storage() {
   const files = new Map();
   let failing = "";
   return { files, fail: path => { failing = path; }, adapter: {
-    exists: async path => path === "Reader annotations" || files.has(path), mkdir: async () => {},
+    exists: async path => path === ".reader-annotations" || files.has(path), mkdir: async () => {},
     list: async () => ({ files: [...files.keys()] }), read: async path => files.get(path),
     write: async (path, text) => { if (path.endsWith(failing) && failing) throw new Error("disk full"); files.set(path, text); },
   }};
 }
 const annotation = { id: "annotation-1", page: 2, color: "green", quote: { exact: "Evidence\nmatters", prefix: "", suffix: "" }, position: { start: 10, end: 26 }, rects: [{ x: .1, y: .2, width: .3, height: .04 }], comment: "My reading note", createdAt: new Date().toISOString() };
-test("reopens annotations with stable identity and generates linkable Markdown", async () => {
+test("reopens annotations with stable identity and writes only the JSON record", async () => {
   const disk = storage(); const store = new AnnotationStore(disk.adapter);
   const record = await store.open("Books/Book.pdf", hash);
   record.annotations.push(annotation); await store.save(record);
   const reopened = await new AnnotationStore(disk.adapter).open("Books/Book.pdf", hash);
   assert.deepEqual(reopened, record);
-  const md = disk.files.get(`Reader annotations/${record.documentId}.md`);
-  assert.match(md, /> Evidence\n> matters/); assert.match(md, /\^annotation-1/); assert.match(md, /page=2/); assert.match(md, /My reading note/);
+  assert.deepEqual([...disk.files.keys()], [`.reader-annotations/${record.documentId}.json`]);
 });
 test("serializes simultaneous opens and retains edits from multiple leaves", async () => {
   const disk = storage(); const store = new AnnotationStore(disk.adapter);
   const [one, two] = await Promise.all([store.open("Book.pdf", hash), store.open("Book.pdf", hash)]);
   assert.equal(one, two); one.annotations.push(annotation);
   await Promise.all([store.save(one), store.save(two)]);
-  assert.equal(parseRecord(disk.files.get(`Reader annotations/${one.documentId}.json`)).annotations.length, 1);
+  assert.equal(parseRecord(disk.files.get(`.reader-annotations/${one.documentId}.json`)).annotations.length, 1);
 });
 test("rename and external move preserve identity while changed editions are rejected", async () => {
   const disk = storage(); const store = new AnnotationStore(disk.adapter);
@@ -42,31 +41,31 @@ test("rename and external move preserve identity while changed editions are reje
   const moved = await new AnnotationStore(disk.adapter).open("Moved.pdf", hash); assert.equal(moved.documentId, record.documentId);
   await assert.rejects(store.open("Renamed.pdf", "b".repeat(64)), /changed/);
 });
-test("failed Markdown writes preserve authoritative JSON and can be retried", async () => {
+test("a failed write keeps the previous record and can be retried", async () => {
   const disk = storage(); const store = new AnnotationStore(disk.adapter);
-  const record = await store.open("Book.pdf", hash); record.annotations.push(annotation); disk.fail(".md");
+  const record = await store.open("Book.pdf", hash); record.annotations.push(annotation); disk.fail(".json");
   await assert.rejects(store.save(record), /disk full/);
-  assert.equal(parseRecord(disk.files.get(`Reader annotations/${record.documentId}.json`)).annotations.length, 1);
-  disk.fail(""); await store.save(record); assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /My reading note/);
+  assert.equal(parseRecord(disk.files.get(`.reader-annotations/${record.documentId}.json`)).annotations.length, 0);
+  disk.fail(""); await store.save(record);
+  assert.equal(parseRecord(disk.files.get(`.reader-annotations/${record.documentId}.json`)).annotations.length, 1);
 });
 test("corrupt selectors are rejected without replacing the record", async () => {
   const disk = storage(); const store = new AnnotationStore(disk.adapter);
   const record = await store.open("Book.pdf", hash); record.annotations.push({ ...annotation, rects: [{ x: 5, y: 0, width: 1, height: 1 }] });
-  const path = `Reader annotations/${record.documentId}.json`; disk.files.set(path, JSON.stringify(record));
+  const path = `.reader-annotations/${record.documentId}.json`; disk.files.set(path, JSON.stringify(record));
   await assert.rejects(new AnnotationStore(disk.adapter).open("Book.pdf", hash), /Invalid/);
   assert.equal(JSON.parse(disk.files.get(path)).annotations[0].rects[0].x, 5);
 });
-test("custom color IDs are valid and Markdown headings use the color's name", async () => {
+test("custom color IDs are valid", async () => {
   const disk = storage();
-  const store = new AnnotationStore(disk.adapter, { colorName: id => ({ "color-k1": "Key idea" })[id] ?? id });
+  const store = new AnnotationStore(disk.adapter);
   const record = await store.open("Book.pdf", hash);
   record.annotations.push({ ...annotation, color: "color-k1" });
   await store.save(record);
-  assert.equal(parseRecord(disk.files.get(`Reader annotations/${record.documentId}.json`)).annotations[0].color, "color-k1");
-  assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /## Page 2 · Key idea/);
+  assert.equal(parseRecord(disk.files.get(`.reader-annotations/${record.documentId}.json`)).annotations[0].color, "color-k1");
   assert.throws(() => parseRecord(JSON.stringify({ ...record, annotations: [{ ...annotation, color: "not a color" }] })), /Invalid/);
 });
-test("relocating moves every record and export, and later saves use the new folder", async () => {
+test("relocating moves every record, with a Markdown file an older version generated, and later saves use the new folder", async () => {
   const files = new Map(); const folders = new Set();
   const inFolder = (folder, path) => path.startsWith(folder + "/") && !path.slice(folder.length + 1).includes("/");
   const adapter = {
@@ -76,15 +75,16 @@ test("relocating moves every record and export, and later saves use the new fold
   };
   const store = new AnnotationStore(adapter);
   const record = await store.open("Book.pdf", hash);
-  files.set("Reader annotations/notes.txt", "user file");
+  files.set(".reader-annotations/notes.txt", "user file");
+  files.set(`.reader-annotations/${record.documentId}.md`, "generated by an older version");
   const moved = [];
   const count = await store.relocate("Reading/Annotations", async (from, to) => { moved.push(to); files.set(to, files.get(from)); files.delete(from); });
   assert.equal(count, 1);
   assert.deepEqual(moved.sort(), [`Reading/Annotations/${record.documentId}.json`, `Reading/Annotations/${record.documentId}.md`]);
-  assert.equal(files.get("Reader annotations/notes.txt"), "user file");
+  assert.equal(files.get(".reader-annotations/notes.txt"), "user file");
   record.annotations.push(annotation); await store.save(record);
   assert.equal(parseRecord(files.get(`Reading/Annotations/${record.documentId}.json`)).annotations.length, 1);
-  assert.equal(files.has(`Reader annotations/${record.documentId}.json`), false);
+  assert.equal(files.has(`.reader-annotations/${record.documentId}.json`), false);
   const reopened = await new AnnotationStore(adapter, { folder: "Reading/Annotations" }).open("Book.pdf", hash);
   assert.equal(reopened.documentId, record.documentId);
 });
@@ -106,7 +106,7 @@ test("folder renames update nested source paths without changing document IDs", 
   await store.rename("Books", "Reading");
   assert.equal(record.sourcePath, "Reading/Chapters/Book.pdf");
   assert.equal(record.documentId, id);
-  assert.match(disk.files.get(`Reader annotations/${id}.md`), /Reading\/Chapters\/Book.pdf/);
+  assert.equal(parseRecord(disk.files.get(`.reader-annotations/${id}.json`)).sourcePath, "Reading/Chapters/Book.pdf");
 });
 test("edits notify every subscriber immediately and saving state reflects the latest revision", async () => {
   const disk = storage(); const store = new AnnotationStore(disk.adapter);
@@ -122,25 +122,24 @@ test("edits notify every subscriber immediately and saving state reflects the la
   assert.equal(secondView.at(-1), "Second edit");
   await Promise.all([first, second]);
   assert.equal(store.state(record).saving, false);
-  assert.equal(parseRecord(disk.files.get(`Reader annotations/${record.documentId}.json`)).annotations[0].comment, "Second edit");
-  assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /Second edit/);
+  assert.equal(parseRecord(disk.files.get(`.reader-annotations/${record.documentId}.json`)).annotations[0].comment, "Second edit");
   off(); store.dispose();
 });
 test("a failed save retries automatically after the local write problem clears", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const disk = storage(); const store = new AnnotationStore(disk.adapter);
   const record = await store.open("Book.pdf", hash);
-  record.annotations.push(annotation); disk.fail(".md");
+  record.annotations.push(annotation); disk.fail(".json");
   await assert.rejects(store.save(record), /disk full/);
   assert.equal(store.state(record).error, "disk full");
   disk.fail("");
   const saved = new Promise(resolve => store.subscribe(r => { if (!store.state(r).saving && !store.state(r).error) resolve(); }));
   t.mock.timers.tick(2000);
   await saved;
-  assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /My reading note/);
+  assert.equal(parseRecord(disk.files.get(`.reader-annotations/${record.documentId}.json`)).annotations.length, 1);
   store.dispose();
 });
-test("JSON and Markdown use the same snapshot when a comment changes during IO", async () => {
+test("an edit made during a write goes into the next write", async () => {
   const disk = storage(); const store = new AnnotationStore(disk.adapter);
   const record = await store.open("Book.pdf", hash); record.annotations.push({ ...annotation, comment: "Before" });
   const writes = []; const original = disk.adapter.write;
@@ -153,7 +152,12 @@ test("JSON and Markdown use the same snapshot when a comment changes during IO",
   // Waiting on one more queued save also waits for the edit generated during the first JSON write.
   await store.save(record);
   assert.equal(JSON.parse(writes[0].content).annotations[0].comment, "Before");
-  assert.match(writes[1].content, /Before/);
-  assert.match(disk.files.get(`Reader annotations/${record.documentId}.md`), /After/);
+  assert.equal(JSON.parse(writes[1].content).annotations[0].comment, "After");
   store.dispose();
+});
+
+test("the book note path and export flag are optional and checked", () => {
+  const record = { version: 1, documentId: "doc-1", sourcePath: "Book.pdf", fingerprint: hash, annotations: [] };
+  assert.equal(parseRecord(JSON.stringify({ ...record, notePath: "Book notes/Book.md", exportRetired: true })).exportRetired, true);
+  assert.throws(() => parseRecord(JSON.stringify({ ...record, exportRetired: "yes" })), /Unsupported/);
 });

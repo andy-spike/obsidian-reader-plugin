@@ -1,10 +1,36 @@
-import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Setting, TFolder } from "obsidian";
+import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Scope, setIcon, Setting, TFile, TFolder } from "obsidian";
 import { ANNOTATION_FOLDER } from "./annotations";
 
 export interface HighlightColor { id: string; name: string; value: string }
-export interface ReaderSettings { colors: HighlightColor[]; folder: string }
+/** Where the book note opens: the right sidebar, or beside the PDF as a tab in the main area. */
+export type NotePlace = "sidebar" | "beside";
+export interface ReaderSettings {
+  colors: HighlightColor[];
+  folder: string;
+  /** Where new book notes are created. */
+  notesFolder: string;
+  /** A note whose text starts each new book note, or empty for the default. */
+  noteTemplate: string;
+  /** Highlight a passage as soon as it is selected with the mouse, instead of showing the popup. */
+  highlightMode: boolean;
+  /** The color highlight mode uses, chosen by right-clicking its button. Primary until changed, or if the color is removed. */
+  highlightModeColor: string;
+  /** Show the PDF's book note in the sidebar whenever a PDF opens in Reader. */
+  showAnnotationsOnOpen: boolean;
+  notePlace: NotePlace;
+}
+export const NOTES_FOLDER = "Book notes";
 
+/**
+ * Primary and Secondary always come first, in this order. Their color and name can change, but they can't be moved or removed;
+ * colors added in settings follow them. The IDs match the earlier yellow and blue defaults, so their highlights keep a color.
+ */
 const DEFAULT_COLORS: HighlightColor[] = [
+  { id: "yellow", name: "Primary", value: "#f5d94d" },
+  { id: "blue", name: "Secondary", value: "#72a9ea" },
+];
+/** Version 0.1 had four fixed colors and stored only their names. */
+const LEGACY_COLORS: HighlightColor[] = [
   { id: "yellow", name: "Yellow", value: "#f5d94d" },
   { id: "green", name: "Green", value: "#70ca8a" },
   { id: "blue", name: "Blue", value: "#72a9ea" },
@@ -17,14 +43,30 @@ export function colorOf(settings: ReaderSettings, id: string): HighlightColor {
   return settings.colors.find(color => color.id === id) ?? REMOVED_COLOR;
 }
 
+/** How many colors at the start of the list are the fixed defaults. */
+export const FIXED_COLORS = DEFAULT_COLORS.length;
+
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown> };
-  const colors = Array.isArray(data.colors)
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown };
+  const valid = Array.isArray(data.colors)
     ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
-    // Version 0.1 stored only names for the four built-in colors.
-    : DEFAULT_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name }));
+    : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
+  const colors = valid.filter((color, index) => valid.findIndex(other => other.id === color.id) === index);
+  // The defaults come first even if earlier settings moved or removed them, keeping any name and color given to them.
+  const defaults = DEFAULT_COLORS.map(color => { const own = colors.find(other => other.id === color.id); return { ...color, ...(own && { name: own.name, value: own.value }) }; });
+  const added = colors.filter(color => !DEFAULT_COLORS.some(other => other.id === color.id)).map(color => ({ id: color.id, name: color.name, value: color.value }));
   const folder = typeof data.folder === "string" ? cleanFolder(data.folder) : null;
-  return { colors: colors.length ? colors : DEFAULT_COLORS.map(color => ({ ...color })), folder: folder ?? ANNOTATION_FOLDER };
+  const notesFolder = typeof data.notesFolder === "string" ? cleanFolder(data.notesFolder) : null;
+  return {
+    colors: [...defaults, ...added],
+    folder: folder ?? ANNOTATION_FOLDER,
+    notesFolder: notesFolder ?? NOTES_FOLDER,
+    noteTemplate: typeof data.noteTemplate === "string" ? cleanFolder(data.noteTemplate) ?? "" : "",
+    highlightMode: data.highlightMode === true,
+    showAnnotationsOnOpen: data.showAnnotationsOnOpen !== false,
+    notePlace: data.notePlace === "beside" ? "beside" : "sidebar",
+    highlightModeColor: typeof data.highlightModeColor === "string" && /^[\w-]+$/.test(data.highlightModeColor) ? data.highlightModeColor : DEFAULT_COLORS[0]!.id,
+  };
 }
 
 /** Returns a vault-relative folder path, or null for the vault root and empty input. */
@@ -42,14 +84,48 @@ export interface SettingsHost extends Plugin {
 export class ReaderSettingTab extends PluginSettingTab {
   constructor(app: App, private host: SettingsHost) { super(app, host); }
 
+  /** Set while a color is dragged. A redraw then would drop the row from under the pointer, so it waits for the drop. */
+  private dragging = false;
+  private redrawAfterDrag = false;
+  /** Ends the current drag without moving anything. */
+  private cancelDrag: (() => void) | null = null;
+
+  /** Closing settings mid-drag cancels it, so later redraws aren't held back. */
+  hide(): void {
+    this.cancelDrag?.();
+    super.hide();
+  }
+
   display(): void {
+    if (this.dragging) { this.redrawAfterDrag = true; return; }
     const { containerEl } = this;
     const { settings } = this.host;
     containerEl.empty();
 
+    new Setting(containerEl).setName("Reader").setHeading();
+    new Setting(containerEl)
+      .setName("Show the book note with PDFs")
+      .setDesc("Open the PDF's book note whenever a PDF opens in Reader. When off, open it with the book note button in the Reader header, the A key, or the Toggle book note command.")
+      .addToggle(toggle => toggle.setValue(settings.showAnnotationsOnOpen).onChange(async value => {
+        settings.showAnnotationsOnOpen = value;
+        await this.host.saveSettings();
+      }));
+    new Setting(containerEl)
+      .setName("Open book notes")
+      .setDesc("Where the book note opens from the button, the A and N keys, and Note. Right-click the book note button to open it in the other place once.")
+      .addDropdown(dropdown => dropdown
+        .addOption("sidebar", "In the right sidebar")
+        .addOption("beside", "Beside the PDF")
+        .setValue(settings.notePlace)
+        .onChange(async value => {
+          settings.notePlace = value === "beside" ? "beside" : "sidebar";
+          await this.host.saveSettings();
+        }));
+
     new Setting(containerEl).setName("Highlight colors").setHeading()
-      .setDesc("Colors appear in the selection popup in this order. Give each one a meaning, such as “Key idea” or “Question”.");
+      .setDesc("Colors appear in the selection popup in this order. Primary and Secondary always come first; you can change their color and name. Colors you add follow them, and you can reorder them with the handles or arrows. Give each one a meaning, such as “Key idea” or “Question”.");
     settings.colors.forEach((color, index) => {
+      const fixed = index < FIXED_COLORS;
       const row = new Setting(containerEl)
         .addColorPicker(picker => picker.setValue(color.value).onChange(async value => {
           color.value = value;
@@ -59,14 +135,26 @@ export class ReaderSettingTab extends PluginSettingTab {
           color.name = value.trim() || "Untitled color";
           await this.host.saveSettings();
         }))
-        .addExtraButton(button => button.setIcon("arrow-up").setTooltip("Move up").setDisabled(index === 0).onClick(() => this.move(index, -1)))
-        .addExtraButton(button => button.setIcon("arrow-down").setTooltip("Move down").setDisabled(index === settings.colors.length - 1).onClick(() => this.move(index, 1)))
-        .addExtraButton(button => button.setIcon("trash-2").setTooltip(settings.colors.length === 1 ? "Keep at least one color" : "Remove color").setDisabled(settings.colors.length === 1).onClick(async () => {
+      row.settingEl.addClass("reader-color-setting");
+      if (fixed) {
+        // Invisible stand-ins for the buttons keep the name fields the same width in every row.
+        for (let i = 0; i < 3; i++) row.addExtraButton(button => { button.extraSettingsEl.addClass("reader-color-placeholder"); button.extraSettingsEl.setAttr("aria-hidden", "true"); button.extraSettingsEl.tabIndex = -1; });
+        const lock = row.settingEl.createDiv({ cls: "reader-color-lock" });
+        setIcon(lock, "lock");
+        lock.createSpan({ cls: "reader-visually-hidden", text: `${color.name} is a default color. It always stays in this place.` });
+        row.settingEl.prepend(lock);
+        return;
+      }
+      row
+        .addExtraButton(button => button.setIcon("arrow-up").setTooltip("Move up").setDisabled(index === FIXED_COLORS).onClick(() => this.move(index, index - 1)))
+        .addExtraButton(button => button.setIcon("arrow-down").setTooltip("Move down").setDisabled(index === settings.colors.length - 1).onClick(() => this.move(index, index + 1)))
+        .addExtraButton(button => button.setIcon("trash-2").setTooltip("Remove color").onClick(async () => {
           settings.colors.splice(index, 1);
           await this.host.saveSettings();
           this.display();
         }));
-      row.settingEl.addClass("reader-color-setting");
+      row.settingEl.addClass("is-movable");
+      this.addHandle(row.settingEl, color.id, color.name);
     });
     new Setting(containerEl)
       .setDesc("Existing highlights in a removed color turn gray. Add the color again or pick a new color from the highlight to restore them.")
@@ -76,6 +164,31 @@ export class ReaderSettingTab extends PluginSettingTab {
         this.display();
         containerEl.querySelectorAll<HTMLInputElement>(".reader-color-setting input[type=text]").item(settings.colors.length - 1)?.select();
       }));
+
+    new Setting(containerEl).setName("Book notes").setHeading()
+      .setDesc("Each PDF gets one note that holds a quote for every highlight and everything you write about it. The note is yours: the plugin adds a section for each new highlight and removes the section of a deleted highlight only when nothing is written under it.");
+    const saveOnLeave = (input: HTMLInputElement, apply: (value: string) => void) => {
+      input.addEventListener("blur", () => { apply(input.value); void this.host.saveSettings(); });
+      input.addEventListener("keydown", event => { if (event.key === "Enter") input.blur(); });
+    };
+    new Setting(containerEl)
+      .setName("Book notes folder")
+      .setDesc("Where new book notes are created. Existing notes stay where they are.")
+      .addText(text => {
+        text.setPlaceholder(NOTES_FOLDER).setValue(settings.notesFolder);
+        const apply = (value: string) => { settings.notesFolder = cleanFolder(value) ?? NOTES_FOLDER; text.setValue(settings.notesFolder); };
+        new FolderSuggest(this.app, text.inputEl, folder => { apply(folder); void this.host.saveSettings(); });
+        saveOnLeave(text.inputEl, apply);
+      });
+    new Setting(containerEl)
+      .setName("Book note template")
+      .setDesc("A note whose text starts each new book note. {{title}}, {{source}}, and {{date}} are filled in, and a source link is added to its properties. Leave empty for a title and a source link.")
+      .addText(text => {
+        text.setPlaceholder("Templates/Book note.md").setValue(settings.noteTemplate);
+        const apply = (value: string) => { settings.noteTemplate = cleanFolder(value) ?? ""; text.setValue(settings.noteTemplate); };
+        new NoteSuggest(this.app, text.inputEl, path => { apply(path); void this.host.saveSettings(); });
+        saveOnLeave(text.inputEl, apply);
+      });
 
     new Setting(containerEl).setName("Storage").setHeading();
     let pending = settings.folder;
@@ -93,7 +206,7 @@ export class ReaderSettingTab extends PluginSettingTab {
     });
     new Setting(containerEl)
       .setName("Annotation folder")
-      .setDesc("Where highlight records (JSON) and their Markdown notes are saved. Changing it moves existing annotation files.")
+      .setDesc("Where the plugin keeps each PDF's highlight positions and colors (JSON). Your writing lives in the book notes. The default, .reader-annotations, is hidden, so it stays out of the file list and search; tools that sync hidden files, such as Git or Syncthing, still copy it, but Obsidian Sync doesn't. Changing it moves existing records.")
       .addText(text => {
         text.setPlaceholder(ANNOTATION_FOLDER).setValue(settings.folder).onChange(value => { pending = value; });
         new FolderSuggest(this.app, text.inputEl, folder => { pending = folder; void commit(text.inputEl); });
@@ -102,12 +215,105 @@ export class ReaderSettingTab extends PluginSettingTab {
       });
   }
 
-  private async move(index: number, offset: number): Promise<void> {
+  /**
+   * A grip at the start of the row. Dragging it slides the row while the others make room, and dropping saves the new order.
+   * Escape cancels a drag. When focused, the up and down arrow keys move the color.
+   */
+  private addHandle(row: HTMLElement, id: string, name: string): void {
+    const handle = row.createDiv({ cls: "reader-color-handle", attr: { role: "button", tabindex: "0" } });
+    setIcon(handle, "grip-vertical");
+    // Named for screen readers without an aria-label, which Obsidian would show as a hover tooltip.
+    handle.createSpan({ cls: "reader-visually-hidden", text: `Reorder ${name}. Use the up and down arrow keys to move it.` });
+    row.prepend(handle);
+    const indexOf = () => this.host.settings.colors.findIndex(color => color.id === id);
+    handle.addEventListener("keydown", event => {
+      const offset = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+      if (!offset) return;
+      event.preventDefault();
+      void this.move(indexOf(), indexOf() + offset, true);
+    });
+    handle.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || this.dragging) return;
+      event.preventDefault();
+      // Only added colors move, and only among themselves.
+      const rows = Array.from(this.containerEl.querySelectorAll<HTMLElement>(".reader-color-setting.is-movable"));
+      const index = rows.indexOf(row);
+      if (index < 0 || rows.length < 2) return;
+      // Rows share a height, so the distance between the first two is one step.
+      const step = rows[1]!.getBoundingClientRect().top - rows[0]!.getBoundingClientRect().top;
+      // The settings page can scroll during a drag; the row follows the pointer either way.
+      const scroller = this.containerEl.closest<HTMLElement>(".vertical-tab-content") ?? this.containerEl;
+      const startY = event.clientY, startScroll = scroller.scrollTop;
+      let pointerY = startY, target = index;
+      this.dragging = true;
+      handle.setPointerCapture(event.pointerId);
+      row.addClass("is-dragging");
+      this.containerEl.addClass("is-reordering");
+      const update = () => {
+        const dy = Math.max(-index * step, Math.min((rows.length - 1 - index) * step, pointerY - startY + scroller.scrollTop - startScroll));
+        target = index + Math.round(dy / step);
+        row.style.transform = `translateY(${dy}px)`;
+        rows.forEach((other, i) => {
+          if (other === row) return;
+          const shift = i > index && i <= target ? -step : i < index && i >= target ? step : 0;
+          other.style.transform = shift ? `translateY(${shift}px)` : "";
+        });
+      };
+      const onMove = (move: PointerEvent) => { pointerY = move.clientY; update(); };
+      // Settings closes on Escape through Obsidian's key scopes, so the drag takes Escape with a scope of its own.
+      const scope = new Scope(this.app.scope);
+      scope.register([], "Escape", () => { this.cancelDrag?.(); return false; });
+      this.app.keymap.pushScope(scope);
+      const end = () => {
+        this.cancelDrag = null;
+        this.app.keymap.popScope(scope);
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", end);
+        handle.removeEventListener("pointercancel", end);
+        handle.removeEventListener("lostpointercapture", end);
+        scroller.removeEventListener("scroll", update);
+        if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+        this.containerEl.removeClass("is-reordering");
+        rows.forEach(other => { other.style.transform = ""; other.removeClass("is-dragging"); });
+        this.dragging = false;
+        // Settings changed elsewhere during the drag replace the list, so find the color again by its ID.
+        const from = indexOf();
+        if (from >= 0 && target !== index) void this.move(from, FIXED_COLORS + target);
+        else if (this.redrawAfterDrag) this.display();
+        this.redrawAfterDrag = false;
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", end);
+      handle.addEventListener("pointercancel", end);
+      handle.addEventListener("lostpointercapture", end);
+      scroller.addEventListener("scroll", update);
+      this.cancelDrag = () => { target = index; end(); };
+    });
+  }
+
+  private async move(from: number, to: number, refocus = false): Promise<void> {
     const colors = this.host.settings.colors;
-    const [color] = colors.splice(index, 1);
-    colors.splice(index + offset, 0, color!);
-    await this.host.saveSettings();
+    if (from < FIXED_COLORS || from >= colors.length || to < FIXED_COLORS || to >= colors.length || from === to) return;
+    const [color] = colors.splice(from, 1);
+    colors.splice(to, 0, color!);
+    // Redraw before saving, so a dropped row never shows in its old place.
     this.display();
+    if (refocus) this.containerEl.querySelectorAll<HTMLElement>(".reader-color-handle").item(to - FIXED_COLORS)?.focus();
+    await this.host.saveSettings();
+  }
+}
+
+class NoteSuggest extends AbstractInputSuggest<TFile> {
+  constructor(app: App, private input: HTMLInputElement, private choose: (path: string) => void) { super(app, input); }
+  protected getSuggestions(query: string): TFile[] {
+    const needle = query.toLowerCase();
+    return this.app.vault.getMarkdownFiles().filter(file => file.path.toLowerCase().includes(needle)).slice(0, 50);
+  }
+  renderSuggestion(file: TFile, el: HTMLElement): void { el.setText(file.path); }
+  selectSuggestion(file: TFile): void {
+    this.input.value = file.path;
+    this.choose(file.path);
+    this.close();
   }
 }
 
