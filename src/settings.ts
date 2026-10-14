@@ -4,7 +4,10 @@ import { ANNOTATION_FOLDER } from "./annotations";
 export interface HighlightColor { id: string; name: string; value: string }
 export interface ReaderSettings { colors: HighlightColor[]; folder: string }
 
-/** New installs start with two colors; more can be added in settings. The IDs match the earlier yellow and blue defaults, so their highlights keep a color. */
+/**
+ * Primary and Secondary always come first, in this order. Their color and name can change, but they can't be moved or removed;
+ * colors added in settings follow them. The IDs match the earlier yellow and blue defaults, so their highlights keep a color.
+ */
 const DEFAULT_COLORS: HighlightColor[] = [
   { id: "yellow", name: "Primary", value: "#f5d94d" },
   { id: "blue", name: "Secondary", value: "#72a9ea" },
@@ -23,13 +26,20 @@ export function colorOf(settings: ReaderSettings, id: string): HighlightColor {
   return settings.colors.find(color => color.id === id) ?? REMOVED_COLOR;
 }
 
+/** How many colors at the start of the list are the fixed defaults. */
+export const FIXED_COLORS = DEFAULT_COLORS.length;
+
 export function loadSettings(saved: unknown): ReaderSettings {
   const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown> };
-  const colors = Array.isArray(data.colors)
+  const valid = Array.isArray(data.colors)
     ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
+  const colors = valid.filter((color, index) => valid.findIndex(other => other.id === color.id) === index);
+  // The defaults come first even if earlier settings moved or removed them, keeping any name and color given to them.
+  const defaults = DEFAULT_COLORS.map(color => { const own = colors.find(other => other.id === color.id); return { ...color, ...(own && { name: own.name, value: own.value }) }; });
+  const added = colors.filter(color => !DEFAULT_COLORS.some(other => other.id === color.id)).map(color => ({ id: color.id, name: color.name, value: color.value }));
   const folder = typeof data.folder === "string" ? cleanFolder(data.folder) : null;
-  return { colors: colors.length ? colors : DEFAULT_COLORS.map(color => ({ ...color })), folder: folder ?? ANNOTATION_FOLDER };
+  return { colors: [...defaults, ...added], folder: folder ?? ANNOTATION_FOLDER };
 }
 
 /** Returns a vault-relative folder path, or null for the vault root and empty input. */
@@ -66,8 +76,9 @@ export class ReaderSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl).setName("Highlight colors").setHeading()
-      .setDesc("Colors appear in the selection popup in this order; drag the handles or use the arrows to reorder them. You start with a primary and a secondary color; add more here. Give each one a meaning, such as “Key idea” or “Question”.");
+      .setDesc("Colors appear in the selection popup in this order. Primary and Secondary always come first; you can change their color and name. Colors you add follow them, and you can reorder them with the handles or arrows. Give each one a meaning, such as “Key idea” or “Question”.");
     settings.colors.forEach((color, index) => {
+      const fixed = index < FIXED_COLORS;
       const row = new Setting(containerEl)
         .addColorPicker(picker => picker.setValue(color.value).onChange(async value => {
           color.value = value;
@@ -77,14 +88,25 @@ export class ReaderSettingTab extends PluginSettingTab {
           color.name = value.trim() || "Untitled color";
           await this.host.saveSettings();
         }))
-        .addExtraButton(button => button.setIcon("arrow-up").setTooltip("Move up").setDisabled(index === 0).onClick(() => this.move(index, index - 1)))
+      row.settingEl.addClass("reader-color-setting");
+      if (fixed) {
+        // Invisible stand-ins for the buttons keep the name fields the same width in every row.
+        for (let i = 0; i < 3; i++) row.addExtraButton(button => { button.extraSettingsEl.addClass("reader-color-placeholder"); button.extraSettingsEl.setAttr("aria-hidden", "true"); button.extraSettingsEl.tabIndex = -1; });
+        const lock = row.settingEl.createDiv({ cls: "reader-color-lock" });
+        setIcon(lock, "lock");
+        lock.createSpan({ cls: "reader-visually-hidden", text: `${color.name} is a default color. It always stays in this place.` });
+        row.settingEl.prepend(lock);
+        return;
+      }
+      row
+        .addExtraButton(button => button.setIcon("arrow-up").setTooltip("Move up").setDisabled(index === FIXED_COLORS).onClick(() => this.move(index, index - 1)))
         .addExtraButton(button => button.setIcon("arrow-down").setTooltip("Move down").setDisabled(index === settings.colors.length - 1).onClick(() => this.move(index, index + 1)))
-        .addExtraButton(button => button.setIcon("trash-2").setTooltip(settings.colors.length === 1 ? "Keep at least one color" : "Remove color").setDisabled(settings.colors.length === 1).onClick(async () => {
+        .addExtraButton(button => button.setIcon("trash-2").setTooltip("Remove color").onClick(async () => {
           settings.colors.splice(index, 1);
           await this.host.saveSettings();
           this.display();
         }));
-      row.settingEl.addClass("reader-color-setting");
+      row.settingEl.addClass("is-movable");
       this.addHandle(row.settingEl, color.id, color.name);
     });
     new Setting(containerEl)
@@ -141,7 +163,8 @@ export class ReaderSettingTab extends PluginSettingTab {
     handle.addEventListener("pointerdown", event => {
       if (event.button !== 0 || this.dragging) return;
       event.preventDefault();
-      const rows = Array.from(this.containerEl.querySelectorAll<HTMLElement>(".reader-color-setting"));
+      // Only added colors move, and only among themselves.
+      const rows = Array.from(this.containerEl.querySelectorAll<HTMLElement>(".reader-color-setting.is-movable"));
       const index = rows.indexOf(row);
       if (index < 0 || rows.length < 2) return;
       // Rows share a height, so the distance between the first two is one step.
@@ -183,7 +206,7 @@ export class ReaderSettingTab extends PluginSettingTab {
         this.dragging = false;
         // Settings changed elsewhere during the drag replace the list, so find the color again by its ID.
         const from = indexOf();
-        if (from >= 0 && target !== index) void this.move(from, target);
+        if (from >= 0 && target !== index) void this.move(from, FIXED_COLORS + target);
         else if (this.redrawAfterDrag) this.display();
         this.redrawAfterDrag = false;
       };
@@ -198,12 +221,12 @@ export class ReaderSettingTab extends PluginSettingTab {
 
   private async move(from: number, to: number, refocus = false): Promise<void> {
     const colors = this.host.settings.colors;
-    if (from < 0 || from >= colors.length || to < 0 || to >= colors.length || from === to) return;
+    if (from < FIXED_COLORS || from >= colors.length || to < FIXED_COLORS || to >= colors.length || from === to) return;
     const [color] = colors.splice(from, 1);
     colors.splice(to, 0, color!);
     // Redraw before saving, so a dropped row never shows in its old place.
     this.display();
-    if (refocus) this.containerEl.querySelectorAll<HTMLElement>(".reader-color-handle").item(to)?.focus();
+    if (refocus) this.containerEl.querySelectorAll<HTMLElement>(".reader-color-handle").item(to - FIXED_COLORS)?.focus();
     await this.host.saveSettings();
   }
 }
