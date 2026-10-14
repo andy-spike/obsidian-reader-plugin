@@ -8,22 +8,31 @@ export function colorMenu(colors: HighlightColor[], current: string, choose: (id
   return menu;
 }
 
-/** Deletes immediately and offers a short undo window instead of asking for confirmation. */
-export function deleteAnnotation(store: AnnotationStore, record: AnnotationRecord, annotation: Annotation): void {
+/** Shows a short message in a Reader tab, with an optional action. */
+export interface Toaster { toast(message: string, action?: { label: string; run: () => void }): void }
+
+/** Deletes immediately and offers a short undo window instead of asking for confirmation. The undo appears in the given Reader, or as an Obsidian notice without one. */
+export function deleteAnnotation(store: AnnotationStore, record: AnnotationRecord, annotation: Annotation, reader?: Toaster | null): void {
   const index = record.annotations.indexOf(annotation);
   if (index < 0) return;
   record.annotations.splice(index, 1);
   void store.save(record).catch(() => {});
+  const restore = () => {
+    if (record.annotations.some(entry => entry.id === annotation.id)) return;
+    record.annotations.splice(Math.min(index, record.annotations.length), 0, annotation);
+    void store.save(record).catch(() => {});
+  };
+  if (reader) {
+    reader.toast("Highlight deleted.", { label: "Undo", run: restore });
+    return;
+  }
   const message = createFragment();
   message.createSpan({ text: "Highlight deleted. " });
   const undo = message.createEl("a", { text: "Undo", href: "#" });
   undo.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
-    if (!record.annotations.some(entry => entry.id === annotation.id)) {
-      record.annotations.splice(Math.min(index, record.annotations.length), 0, annotation);
-      void store.save(record).catch(() => {});
-    }
+    restore();
     notice.hide();
   });
   const notice = new Notice(message, 6000);

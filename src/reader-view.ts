@@ -1,10 +1,10 @@
-import { FileView, Menu, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { FileView, Menu, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { randomUUID } from "node:crypto";
 import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, ReaderSettings } from "./settings";
-import { deleteAnnotation } from "./ui";
+import { deleteAnnotation, type Toaster } from "./ui";
 import { OutlineModal } from "./outline-modal";
 import type { OutlineNode } from "./components/OutlineTree.svelte";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
@@ -52,7 +52,7 @@ export interface ReaderHost {
   rememberPosition(path: string, position: ReadingPosition): void;
 }
 
-export class ReaderView extends FileView {
+export class ReaderView extends FileView implements Toaster {
   private pdf: PDFDocumentProxy | null = null;
   private loading: PDFDocumentLoadingTask | null = null;
   private record: AnnotationRecord | null = null;
@@ -77,6 +77,8 @@ export class ReaderView extends FileView {
   private pages!: HTMLElement;
   private message!: HTMLElement;
   private hint!: HTMLElement;
+  private toastEl: HTMLElement | null = null;
+  private toastTimer: number | undefined;
   private controls!: ReturnType<typeof mount<Record<string, unknown>, { update(state: ControlsState): void }>>;
   private outlineAction!: HTMLElement;
   private popup!: AnnotationPopup;
@@ -148,6 +150,7 @@ export class ReaderView extends FileView {
     this.register(() => observer.disconnect());
     this.register(() => {
       window.clearTimeout(this.settleTimer);
+      window.clearTimeout(this.toastTimer);
       if (this.frame) cancelAnimationFrame(this.frame);
     });
     this.register(this.host.store.subscribe(record => { if (record === this.record) this.refreshAnnotations(); }));
@@ -553,6 +556,27 @@ export class ReaderView extends FileView {
     this.pages.querySelectorAll<HTMLElement>(".reader-mark").forEach(mark => mark.toggleClass("is-hovered", mark.dataset.id === id));
   }
 
+  /**
+   * Shows a short message just above the page and zoom bar, where the reader is already looking, instead of in Obsidian's notice corner.
+   * A new message replaces the current one. It stays while the pointer is over it, so an action such as Undo can be reached.
+   */
+  toast(message: string, action?: { label: string; run: () => void }): void {
+    this.toastEl?.remove();
+    window.clearTimeout(this.toastTimer);
+    const el = this.toastEl = this.contentEl.createDiv({ cls: "reader-toast", attr: { role: "status" } });
+    el.createSpan({ text: message });
+    const close = () => {
+      window.clearTimeout(this.toastTimer);
+      el.remove();
+      if (this.toastEl === el) this.toastEl = null;
+    };
+    if (action) el.createEl("button", { cls: "reader-toast-action", text: action.label }).addEventListener("click", () => { action.run(); close(); });
+    const arm = () => { this.toastTimer = window.setTimeout(close, action ? 6000 : 2500); };
+    el.addEventListener("pointerenter", () => window.clearTimeout(this.toastTimer));
+    el.addEventListener("pointerleave", arm);
+    arm();
+  }
+
   /** Scrolls a highlight into view from the sidebar and briefly pulses it. */
   async showAnnotation(annotation: Annotation): Promise<void> {
     await this.app.workspace.revealLeaf(this.leaf);
@@ -737,7 +761,7 @@ export class ReaderView extends FileView {
       copy: () => this.copy(annotation.quote.exact),
       remove: () => {
         this.popup.hide();
-        if (this.record) deleteAnnotation(this.host.store, this.record, annotation);
+        if (this.record) deleteAnnotation(this.host.store, this.record, annotation, this);
       },
     }, focusComment);
   }
@@ -747,7 +771,7 @@ export class ReaderView extends FileView {
     this.passages = this.readSelection();
     const rects = this.passages.length ? this.contentEl.ownerDocument.getSelection()!.getRangeAt(0).getClientRects() : null;
     const last = rects?.item(rects.length - 1);
-    if (!last) { new Notice("Select a passage in the PDF first."); return; }
+    if (!last) { this.toast("Select a passage in the PDF first."); return; }
     if (!this.host.settings().colors.some(color => color.id === this.lastColor)) this.lastColor = this.host.settings().colors[0]!.id;
     this.createHighlights(this.lastColor, withComment, { clientX: last.right, top: last.top, bottom: last.bottom, above: false });
   }
@@ -766,7 +790,7 @@ export class ReaderView extends FileView {
   }
 
   private copy(text: string): void {
-    void navigator.clipboard.writeText(text.replace(/\s+/g, " ").trim()).then(() => new Notice("Copied to clipboard."));
+    void navigator.clipboard.writeText(text.replace(/\s+/g, " ").trim()).then(() => this.toast("Copied to clipboard."));
     this.popup.hide();
   }
 
@@ -791,7 +815,7 @@ export class ReaderView extends FileView {
     const pdf = this.pdf;
     if (!pdf) return;
     const outline = await pdf.getOutline().catch(() => null);
-    if (!outline?.length) { new Notice("This PDF has no table of contents."); return; }
+    if (!outline?.length) { this.toast("This PDF has no table of contents."); return; }
     const nodes: OutlineNode[] = [];
     const targets: Promise<{ page: number; offset: number } | null>[] = [];
     const walk = (items: typeof outline, depth: number, parent: number | null) => {
