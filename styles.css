@@ -98,7 +98,7 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 .reader-color-setting .extra-setting-button.is-disabled:hover { background: transparent; }
 /* Table of contents: Obsidian's tree rows in a tall dialog, with the list scrolling under the search field. */
 /* The dialog keeps one size whatever the book or search shows, and the list scrolls inside it. Obsidian centers it in the window. */
-.reader-outline-modal { display: flex; flex-direction: column; width: min(640px, 92vw); height: min(720px, 80vh); }
+.reader-outline-modal { display: flex; flex-direction: column; width: min(640px, 92vw); height: min(520px, 70vh); }
 .reader-outline-modal .modal-content { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .reader-outline-search { flex: none; margin-bottom: var(--size-4-2); }
 .reader-outline-search input { width: 100%; }
