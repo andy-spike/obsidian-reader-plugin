@@ -1,4 +1,4 @@
-import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Setting, TFolder } from "obsidian";
+import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, setIcon, Setting, TFolder } from "obsidian";
 import { ANNOTATION_FOLDER } from "./annotations";
 
 export interface HighlightColor { id: string; name: string; value: string }
@@ -53,7 +53,7 @@ export class ReaderSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl).setName("Highlight colors").setHeading()
-      .setDesc("Colors appear in the selection popup in this order. You start with a primary and a secondary color; add more here. Give each one a meaning, such as “Key idea” or “Question”.");
+      .setDesc("Colors appear in the selection popup in this order; drag the handles to reorder them. You start with a primary and a secondary color; add more here. Give each one a meaning, such as “Key idea” or “Question”.");
     settings.colors.forEach((color, index) => {
       const row = new Setting(containerEl)
         .addColorPicker(picker => picker.setValue(color.value).onChange(async value => {
@@ -64,14 +64,13 @@ export class ReaderSettingTab extends PluginSettingTab {
           color.name = value.trim() || "Untitled color";
           await this.host.saveSettings();
         }))
-        .addExtraButton(button => button.setIcon("arrow-up").setTooltip("Move up").setDisabled(index === 0).onClick(() => this.move(index, -1)))
-        .addExtraButton(button => button.setIcon("arrow-down").setTooltip("Move down").setDisabled(index === settings.colors.length - 1).onClick(() => this.move(index, 1)))
         .addExtraButton(button => button.setIcon("trash-2").setTooltip(settings.colors.length === 1 ? "Keep at least one color" : "Remove color").setDisabled(settings.colors.length === 1).onClick(async () => {
           settings.colors.splice(index, 1);
           await this.host.saveSettings();
           this.display();
         }));
       row.settingEl.addClass("reader-color-setting");
+      this.addHandle(row.settingEl, index, color.name);
     });
     new Setting(containerEl)
       .setDesc("Existing highlights in a removed color turn gray. Add the color again or pick a new color from the highlight to restore them.")
@@ -107,12 +106,65 @@ export class ReaderSettingTab extends PluginSettingTab {
       });
   }
 
-  private async move(index: number, offset: number): Promise<void> {
+  /**
+   * A grip at the start of the row. Dragging it slides the row while the others make room, and dropping saves the new order.
+   * When focused, the arrow keys move the color up or down.
+   */
+  private addHandle(row: HTMLElement, index: number, name: string): void {
+    const handle = row.createDiv({ cls: "reader-color-handle", attr: { role: "button", tabindex: "0" } });
+    setIcon(handle, "grip-vertical");
+    // Named for screen readers without an aria-label, which Obsidian would show as a hover tooltip.
+    handle.createSpan({ cls: "reader-visually-hidden", text: `Reorder ${name}. Use the up and down arrow keys to move it.` });
+    row.prepend(handle);
+    handle.addEventListener("keydown", event => {
+      const offset = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+      if (!offset) return;
+      event.preventDefault();
+      void this.move(index, index + offset, true);
+    });
+    handle.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const rows = Array.from(this.containerEl.querySelectorAll<HTMLElement>(".reader-color-setting"));
+      // Rows share a height, so the distance between the first two is one step.
+      const step = rows.length > 1 ? rows[1]!.getBoundingClientRect().top - rows[0]!.getBoundingClientRect().top : 1;
+      const startY = event.clientY;
+      let target = index;
+      handle.setPointerCapture(event.pointerId);
+      row.addClass("is-dragging");
+      this.containerEl.addClass("is-reordering");
+      const onMove = (move: PointerEvent) => {
+        const dy = Math.max(-index * step, Math.min((rows.length - 1 - index) * step, move.clientY - startY));
+        target = index + Math.round(dy / step);
+        row.style.transform = `translateY(${dy}px)`;
+        rows.forEach((other, i) => {
+          if (other === row) return;
+          const shift = i > index && i <= target ? -step : i < index && i >= target ? step : 0;
+          other.style.transform = shift ? `translateY(${shift}px)` : "";
+        });
+      };
+      const onEnd = () => {
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onEnd);
+        handle.removeEventListener("pointercancel", onEnd);
+        this.containerEl.removeClass("is-reordering");
+        rows.forEach(other => { other.style.transform = ""; other.removeClass("is-dragging"); });
+        if (target !== index) void this.move(index, target);
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onEnd);
+      handle.addEventListener("pointercancel", onEnd);
+    });
+  }
+
+  private async move(from: number, to: number, refocus = false): Promise<void> {
     const colors = this.host.settings.colors;
-    const [color] = colors.splice(index, 1);
-    colors.splice(index + offset, 0, color!);
+    if (to < 0 || to >= colors.length) return;
+    const [color] = colors.splice(from, 1);
+    colors.splice(to, 0, color!);
     await this.host.saveSettings();
     this.display();
+    if (refocus) this.containerEl.querySelectorAll<HTMLElement>(".reader-color-handle").item(to)?.focus();
   }
 }
 

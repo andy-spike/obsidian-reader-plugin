@@ -76,14 +76,23 @@ textarea.reader-comment-editor { display: block; box-sizing: border-box; resize:
 
 /* ---- Settings and table of contents ---- */
 .reader-color-setting .setting-item-info { display: none; }
+.reader-color-setting { position: relative; gap: var(--size-4-2); }
+.reader-color-handle { display: flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 28px; border-radius: var(--radius-s); color: var(--text-faint); cursor: grab; touch-action: none; }
+.reader-color-handle:hover, .reader-color-handle:focus-visible { color: var(--text-muted); background: var(--background-modifier-hover); }
+.reader-color-handle:focus-visible { box-shadow: 0 0 0 2px var(--background-modifier-border-focus); outline: none; }
+.is-reordering, .is-reordering .reader-color-handle { cursor: grabbing; }
+.is-reordering .reader-color-setting:not(.is-dragging) { transition: transform 150ms ease-out; }
+.reader-color-setting.is-dragging { z-index: 1; box-shadow: var(--shadow-s); background: var(--background-primary); }
 .reader-color-setting .setting-item-control { justify-content: flex-start; }
 .reader-color-setting input[type="text"] { flex: 1; }
 /* Table of contents: Obsidian's tree rows in a tall dialog, with the list scrolling under the search field. */
-.reader-outline-modal { width: min(640px, 92vw); height: min(720px, 85vh); }
-.reader-outline-modal .modal-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+/* The dialog fits its rows up to a limit, then the list scrolls. It sits near the top like the quick switcher, so opening a chapter grows it downward instead of moving it. */
+.modal-container:has(> .reader-outline-modal) { align-items: flex-start; }
+.reader-outline-modal { display: flex; flex-direction: column; width: min(640px, 92vw); height: auto; max-height: min(720px, 80vh); margin-top: 10vh; }
+.reader-outline-modal .modal-content { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
 .reader-outline-search { flex: none; margin-bottom: var(--size-4-2); }
 .reader-outline-search input { width: 100%; }
-.reader-outline-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--size-4-2)); }
+.reader-outline-list { flex: 0 1 auto; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--size-4-2)); }
 .reader-outline-row { margin-bottom: 1px; align-items: center; }
 .reader-outline-row.is-top-level { font-weight: var(--font-medium); }
 .reader-outline-row.is-current .tree-item-inner { color: var(--text-accent); }

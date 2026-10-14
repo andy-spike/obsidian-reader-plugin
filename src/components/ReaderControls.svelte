@@ -8,6 +8,7 @@
 
   interface Props { step: (delta: 1 | -1) => void; goToPage: (page: number) => void; done: () => void; zoomBy: (direction: 1 | -1) => void; zoomMenu: (anchor: DOMRect) => void; reset: () => void }
   let { step, goToPage, done, zoomBy, zoomMenu, reset }: Props = $props();
+  const id = $props.id();
 
   let current = $state<ControlsState>({ page: 1, total: 0, atStart: true, zoom: 1, canZoomOut: true, canZoomIn: true, fitWidth: false });
   /** What the reader types into the page field. It replaces the current page only while the field has focus. */
@@ -24,10 +25,11 @@
   }
 </script>
 
-<div class="reader-controls" role="toolbar" aria-label="Page and zoom">
+<div class="reader-controls" role="toolbar">
   <IconButton icon="chevron-up" label="Previous page" disabled={!current.total || current.atStart} onclick={() => step(-1)} />
+  <label class="reader-visually-hidden" for="reader-page-{id}">Page number</label>
   <input
-    class="reader-page-input" type="text" inputmode="numeric" aria-label="Page number"
+    id="reader-page-{id}" class="reader-page-input" type="text" inputmode="numeric"
     style:width="{Math.max(2, String(current.total).length) + 1.5}ch"
     value={typed ?? (current.total ? String(current.page) : "")}
     onfocus={event => { typed = event.currentTarget.value; event.currentTarget.select(); }}

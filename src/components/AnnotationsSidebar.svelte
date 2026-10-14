@@ -81,14 +81,14 @@
               </div>
               {#if editing === annotation.id}
                 <textarea
-                  class="reader-comment-editor" aria-label="Comment" placeholder="Write a comment…" rows="1" value={comment}
+                  class="reader-comment-editor" placeholder="Write a comment…" rows="1" value={comment}
                   oninput={event => { annotation.comment = event.currentTarget.value; save(); }}
                   onkeydown={event => { if (event.key === "Escape") { event.preventDefault(); event.currentTarget.blur(); } }}
                   onblur={() => { if (editing === annotation.id) editing = null; }}
                   {@attach focusAtEnd}
                 ></textarea>
               {:else if comment}
-                <div class="reader-entry-comment" role="button" tabindex="0" aria-label="Edit comment"
+                <div class="reader-entry-comment" role="button" tabindex="0"
                   onclick={() => (editing = annotation.id)}
                   onkeydown={event => { if (event.key === "Enter") { event.preventDefault(); editing = annotation.id; } }}
                 >{comment}</div>

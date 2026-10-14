@@ -81,11 +81,11 @@
 
 <div class="search-input-container reader-outline-search">
   <!-- svelte-ignore a11y_autofocus -->
-  <input type="search" placeholder="Search chapters and sections" aria-label="Search chapters and sections" spellcheck="false" autofocus bind:value={query} {onkeydown} />
+  <input type="search" placeholder="Search chapters and sections" spellcheck="false" autofocus bind:value={query} {onkeydown} />
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   {#if query}<div class="search-input-clear-button" role="button" tabindex="-1" aria-label="Clear search" onclick={() => (query = "")}></div>{/if}
 </div>
-<div class="reader-outline-list" role="tree" aria-label="Table of contents" bind:this={list}>
+<div class="reader-outline-list" role="tree" bind:this={list}>
   {#each visible as node (node.id)}
     {@const open = !!matches || expanded.has(node.id)}
     <!-- The search field handles the keyboard for the whole tree, like Obsidian's quick switcher. -->

@@ -1,7 +1,7 @@
 import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, WorkspaceLeaf, WorkspaceSidedock } from "obsidian";
 
 import { AnnotationStore } from "./annotations";
-import { ReaderView, READER_VIEW } from "./reader-view";
+import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
 import { stopPdfWorker } from "./pdf-engine";
 import { colorOf, loadSettings, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
@@ -13,8 +13,13 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   private redirecting = new WeakSet<WorkspaceLeaf>();
   private reader: ReaderView | null = null;
   private store!: AnnotationStore;
+  /** Where each PDF was last read, by vault path, so it reopens there in a new tab or after Obsidian restarts. Oldest first. */
+  private positions = new Map<string, ReadingPosition>();
+  private positionTimer: ReturnType<typeof setTimeout> | undefined;
   async onload(): Promise<void> {
-    this.settings = loadSettings(await this.loadData());
+    const data = await this.loadData();
+    this.settings = loadSettings(data);
+    this.positions = loadPositions(data);
     const store = this.store = new AnnotationStore(this.app.vault.adapter, { folder: this.settings.folder, colorName: id => colorOf(this.settings, id).name });
     const refreshSidebar = () => this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
     let sidebarOpening: Promise<void> | null = null;
@@ -64,6 +69,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
       store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(), openNative: file => void open(file, undefined, true),
+      lastPosition: path => this.positions.get(path),
+      rememberPosition: (path, position) => this.rememberPosition(path, position),
     }));
     this.addSettingTab(new ReaderSettingTab(this.app, this));
     // Saving is silent while it works. Report a failing vault write once, and again when it recovers.
@@ -153,6 +160,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       }
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      const position = this.positions.get(oldPath);
+      if (position && this.positions.delete(oldPath)) this.rememberPosition(file.path, position);
       void store.rename(oldPath, file.path).catch(error => new Notice(`Could not update annotation source: ${error.message}`));
     }));
     this.registerObsidianProtocolHandler("reader-plugin", async params => {
@@ -189,8 +198,26 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       },
     });
   }
+  /** Settings and reading positions share the plugin's data file. */
+  private async persist(): Promise<void> {
+    clearTimeout(this.positionTimer);
+    this.positionTimer = undefined;
+    await this.saveData({ ...this.settings, positions: Object.fromEntries(this.positions) });
+  }
+
+  /** Scrolling reports positions continuously, so writes wait until it pauses. */
+  private rememberPosition(path: string, position: ReadingPosition): void {
+    const previous = this.positions.get(path);
+    this.positions.delete(path);
+    this.positions.set(path, position);
+    while (this.positions.size > MAX_POSITIONS) this.positions.delete(this.positions.keys().next().value!);
+    if (previous && previous.page === position.page && previous.offset === position.offset && previous.zoom === position.zoom) return;
+    clearTimeout(this.positionTimer);
+    this.positionTimer = setTimeout(() => void this.persist(), 1000);
+  }
+
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    await this.persist();
     this.app.workspace.getLeavesOfType(READER_VIEW).forEach(leaf => (leaf.view as ReaderView).refreshSettings());
     this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
   }
@@ -206,7 +233,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         else await this.app.vault.adapter.rename(source, target);
       });
       this.settings.folder = folder;
-      await this.saveData(this.settings);
+      await this.persist();
       // Remove the previous folder only when the disk shows nothing else lives there.
       // Obsidian's non-recursive rmdir fails on empty folders under current Electron, so check first and remove the empty folder.
       const left = await this.app.vault.adapter.list(from).catch(() => null);
@@ -219,11 +246,29 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
 
   onunload(): void {
     this.routing = false;
+    // Closing the views below records their final positions; write them before the plugin goes away.
+    this.app.workspace.getLeavesOfType(READER_VIEW).forEach(leaf => (leaf.view as ReaderView).savePosition());
+    if (this.positionTimer !== undefined) void this.persist();
     this.store?.dispose();
     this.app.workspace.detachLeavesOfType(READER_VIEW);
     this.app.workspace.detachLeavesOfType(ANNOTATIONS_VIEW);
     stopPdfWorker();
   }
+}
+
+/** Enough for a library; the least recently read books are forgotten first. */
+const MAX_POSITIONS = 200;
+
+function loadPositions(data: unknown): Map<string, ReadingPosition> {
+  const saved = (data as { positions?: unknown } | null)?.positions;
+  const positions = new Map<string, ReadingPosition>();
+  if (!saved || typeof saved !== "object") return positions;
+  for (const [path, value] of Object.entries(saved as Record<string, unknown>)) {
+    const { page, offset, zoom } = (value ?? {}) as Record<string, unknown>;
+    if (typeof page !== "number" || typeof offset !== "number" || !(typeof zoom === "number" || zoom === "width" || zoom === "page")) continue;
+    positions.set(path, { page, offset, zoom });
+  }
+  return positions;
 }
 
 class PdfPicker extends FuzzySuggestModal<TFile> {

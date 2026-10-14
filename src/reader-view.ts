@@ -39,12 +39,17 @@ interface PageSlot {
   token: number;
   busy: boolean;
 }
+/** A page, how far down it the view's top edge is (0–1), and the zoom: a number or a fit mode. */
+export interface ReadingPosition { page: number; offset: number; zoom: number | "width" | "page" }
+
 export interface ReaderHost {
   store: AnnotationStore;
   settings(): ReaderSettings;
   ready(reader: ReaderView): void;
   toggleAnnotations(): void;
   openNative(file: TFile): void;
+  lastPosition(path: string): ReadingPosition | undefined;
+  rememberPosition(path: string, position: ReadingPosition): void;
 }
 
 export class ReaderView extends FileView {
@@ -188,7 +193,8 @@ export class ReaderView extends FileView {
       this.message.hide();
       this.buildPages(first);
       this.ready();
-      if (!this.restore) this.restore = {};
+      // A tab restored by Obsidian carries its own position. A newly opened tab continues where this PDF was last read.
+      if (!this.restore) this.restore = { ...this.host.lastPosition(file.path) };
       this.applyRestore();
       void this.checkText(generation);
       void pdf.getOutline().then(outline => { if (generation === this.generation) this.outlineAction.toggle(!!outline?.length); }).catch(() => {});
@@ -197,8 +203,15 @@ export class ReaderView extends FileView {
       this.showMessage(`Could not open this PDF. ${error instanceof Error ? error.message : String(error)}`, true);
     }
   }
-  async onUnloadFile(): Promise<void> { await this.disposePdf(); }
-  async onClose(): Promise<void> { await this.disposePdf(); }
+  async onUnloadFile(): Promise<void> { this.savePosition(); await this.disposePdf(); }
+  async onClose(): Promise<void> { this.savePosition(); await this.disposePdf(); }
+
+  /** Records where this PDF is being read. Skipped while a requested position is still waiting to be applied. */
+  savePosition(): void {
+    if (!this.file || !this.pdf || this.restore) return;
+    const position = this.measurePosition() ?? this.position;
+    if (position) this.host.rememberPosition(this.file.path, { ...position, zoom: this.fit ?? this.zoom });
+  }
 
   private ready(): void { this.host.ready(this); }
 
@@ -385,6 +398,7 @@ export class ReaderView extends FileView {
     const top = this.stage.scrollTop, height = this.stage.clientHeight;
     if (!height) return;
     this.position = this.measurePosition();
+    this.savePosition();
     this.setCurrentPage(this.slots[this.slotAt(top + height * 0.3)]!.number);
     this.updateControls();
     const first = this.slotAt(top - height), last = this.slotAt(top + height * 2);

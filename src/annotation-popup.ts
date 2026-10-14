@@ -26,7 +26,7 @@ export class AnnotationPopup {
   private observer: ResizeObserver;
 
   constructor(private host: HTMLElement, private viewport: HTMLElement, private reserveBottom: number, private onHide: () => void = () => {}) {
-    this.el = host.createDiv({ cls: "reader-popup", attr: { role: "dialog", "aria-label": "Annotate passage" } });
+    this.el = host.createDiv({ cls: "reader-popup", attr: { role: "dialog" } });
     this.el.hidden = true;
     this.card = mount(Card, { target: this.el });
     // Buttons must not take focus away from the text selection they act on.

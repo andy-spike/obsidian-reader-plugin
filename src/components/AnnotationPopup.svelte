@@ -82,7 +82,7 @@
     </div>
     {#if editor}
       <textarea
-        class="reader-comment-editor" aria-label="Comment" placeholder="Write a comment…" rows="1" value={comment}
+        class="reader-comment-editor" placeholder="Write a comment…" rows="1" value={comment}
         oninput={event => actions.comment(event.currentTarget.value)}
         {@attach focusEditor && focusAtEnd}
       ></textarea>
