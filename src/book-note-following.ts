@@ -43,7 +43,7 @@ export class BookNoteFollowing {
       if (record.annotations.length || !record.exportRetired) this.notes.schedule(record);
     }
     if (!current || this.reader !== reader || this.closed) return;
-    if (!this.dismissed && this.settings().showAnnotationsOnOpen && record) await this.show(reader, true, this.settings().notePlace);
+    if (!this.dismissed && this.settings().showAnnotationsOnOpen && record) await this.show(reader, this.settings().notePlace);
     else await this.update();
   }
 
@@ -79,7 +79,7 @@ export class BookNoteFollowing {
     this.reader = reader;
     this.dismissed = false;
     // Keep this explicit request tied to its PDF even if another PDF becomes active during the note write.
-    await this.notes.open(record, annotationId, () => this.show(reader, true, place));
+    await this.notes.open(record, annotationId, () => this.show(reader, place));
   }
 
   dispose(): void { this.closed = true; }
@@ -92,8 +92,8 @@ export class BookNoteFollowing {
     });
   }
 
-  private show(reader: ReaderView, reveal: boolean, place: NotePlace): Promise<WorkspaceLeaf | null> {
-    return this.serial(() => this.display(reader, reveal, place), null);
+  private show(reader: ReaderView, place: NotePlace): Promise<WorkspaceLeaf | null> {
+    return this.serial(() => this.display(reader, true, place), null);
   }
 
   private async display(reader: ReaderView | null, reveal: boolean, place: NotePlace): Promise<WorkspaceLeaf | null> {

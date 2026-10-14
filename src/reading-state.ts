@@ -89,8 +89,7 @@ export class SavedReadingState<Settings extends object> {
 
   /** Explicit settings saves and position flushes use the same serialized write loop. */
   flush(): Promise<void> {
-    clearTimeout(this.timer);
-    this.timer = undefined;
+    this.cancelScheduledWrite();
     ++this.revision;
     this.unsaved = true;
     if (!this.writing) this.writing = Promise.resolve().then(() => this.write()).finally(() => { this.writing = null; });
@@ -100,8 +99,7 @@ export class SavedReadingState<Settings extends object> {
   /** Called after Reader views have recorded their final positions. No debounce or retry survives unloading. */
   close(): Promise<void> {
     this.closed = true;
-    clearTimeout(this.timer);
-    this.timer = undefined;
+    this.cancelScheduledWrite();
     return this.pending.size || this.unsaved || this.writing ? this.flush() : Promise.resolve();
   }
 
@@ -115,13 +113,17 @@ export class SavedReadingState<Settings extends object> {
         for (const [path, revision] of this.pending) if (revision <= snapshotRevision) this.pending.delete(path);
       } while (snapshotRevision !== this.revision);
       this.unsaved = false;
-      clearTimeout(this.timer);
-      this.timer = undefined;
+      this.cancelScheduledWrite();
     } catch (error) {
       // Keep pending positions through failures and external reloads. Background writes retry after the debounce interval.
       if (!this.closed) this.schedule();
       throw error;
     }
+  }
+
+  private cancelScheduledWrite(): void {
+    clearTimeout(this.timer);
+    this.timer = undefined;
   }
 
   private schedule(): void {
@@ -140,8 +142,10 @@ function loadPositions(data: unknown): Map<string, ReadingPosition> {
   if (!saved || typeof saved !== "object") return positions;
   for (const [path, value] of Object.entries(saved)) {
     const { page, offset, zoom } = (value ?? {}) as Partial<ReadingPosition>;
-    if (typeof page !== "number" || !Number.isInteger(page) || page < 1 || typeof offset !== "number" || !Number.isFinite(offset) || offset < 0 || offset > 1 ||
-      !(zoom === "width" || zoom === "page" || typeof zoom === "number" && Number.isFinite(zoom) && zoom > 0)) continue;
+    if (typeof page !== "number" || !Number.isInteger(page) || page < 1) continue;
+    if (typeof offset !== "number" || !Number.isFinite(offset) || offset < 0 || offset > 1) continue;
+    const validZoom = zoom === "width" || zoom === "page" || typeof zoom === "number" && Number.isFinite(zoom) && zoom > 0;
+    if (!validZoom) continue;
     positions.set(path, { page, offset, zoom });
   }
   trimPositions(positions);

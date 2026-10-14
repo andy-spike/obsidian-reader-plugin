@@ -253,11 +253,15 @@ export class BookNoteReconciler {
   private quotes = new Map<string, Map<string, string>>();
 
   reconcile(text: string, record: AnnotationRecord): string {
-    text = addSeparators(flowQuotes(dropPdfLinks(text), new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]))));
+    text = dropPdfLinks(text);
+    const quotes = new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]));
+    text = flowQuotes(text, quotes);
+    text = addSeparators(text);
     const ids = new Set(record.annotations.map(annotation => annotation.id));
     const known = this.quotes.get(record.documentId);
     for (const section of findSections(text).reverse()) {
-      if (!ids.has(section.id) && !section.writing && known?.get(section.id) === quoteText(section.quote)) text = removeSection(text, section);
+      if (ids.has(section.id) || section.writing) continue;
+      if (known?.get(section.id) === quoteText(section.quote)) text = removeSection(text, section);
     }
     const sorted = [...record.annotations].sort(byPosition);
     for (const annotation of sorted) {

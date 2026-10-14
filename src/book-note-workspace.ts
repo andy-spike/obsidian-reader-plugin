@@ -31,7 +31,9 @@ export class ObsidianBookNoteWorkspace implements BookNoteWorkspace {
   }
 
   create(place: NotePlace, reader: ReaderView | null): WorkspaceLeaf | null {
-    return place === "sidebar" ? this.app.workspace.getRightLeaf(false) : reader ? this.app.workspace.createLeafBySplit(reader.leaf, "vertical") : null;
+    if (place === "sidebar") return this.app.workspace.getRightLeaf(false);
+    if (!reader) return null;
+    return this.app.workspace.createLeafBySplit(reader.leaf, "vertical");
   }
 
   async display(leaf: WorkspaceLeaf, record: AnnotationRecord | null): Promise<void> {
