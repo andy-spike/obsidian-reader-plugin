@@ -1,4 +1,4 @@
-import { FileView, Menu, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { FileView, Menu, Scope, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { randomUUID } from "node:crypto";
 import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
@@ -127,8 +127,8 @@ export class ReaderView extends FileView {
     contentEl.empty();
     contentEl.addClass("reader-view");
     // Each action is placed before the previous one, so they show in the reverse of this order.
-    this.addAction("panel-right", "Toggle annotations", () => this.host.toggleAnnotations());
-    this.addAction("notebook-pen", "Open book note", () => this.host.openNote(this, null));
+    this.addAction("panel-right", "Toggle annotations (A)", () => this.host.toggleAnnotations());
+    this.addAction("notebook-pen", "Open book note (N)", () => this.host.openNote(this, null));
     this.modeAction = this.addAction("highlighter", "", () => this.host.toggleHighlightMode());
     this.modeAction.addClass("reader-mode-action");
     this.modeAction.addEventListener("contextmenu", event => {
@@ -136,7 +136,7 @@ export class ReaderView extends FileView {
       colorMenu(this.host.settings().colors, this.modeColor().id, id => this.host.chooseHighlightModeColor(id)).showAtMouseEvent(event);
     });
     this.showHighlightMode();
-    this.outlineAction = this.addAction("list", "Table of contents", () => void this.openOutline());
+    this.outlineAction = this.addAction("list", "Table of contents (T)", () => void this.openOutline());
     this.outlineAction.hide();
 
     this.stage = contentEl.createDiv({ cls: "reader-stage", attr: { tabindex: "-1" } });
@@ -173,6 +173,7 @@ export class ReaderView extends FileView {
     });
     this.register(this.host.store.subscribe(record => { if (record === this.record) this.refreshAnnotations(); }));
     this.bindSelection();
+    this.bindKeys();
   }
 
   private buildControls(): void {
@@ -633,6 +634,36 @@ export class ReaderView extends FileView {
     }, 1600);
   }
 
+  // ---- Keyboard ----
+
+  /**
+   * Single-key shortcuts while this Reader is the active tab, like Obsidian's own views, so they can't clash with global
+   * hotkeys. They stand aside while you type in a field, such as the page number. Each also exists as a command for hotkeys.
+   */
+  private bindKeys(): void {
+    this.scope = new Scope(this.app.scope);
+    const key = (modifiers: ("Shift")[], name: string, run: () => void) => this.scope!.register(modifiers, name, event => {
+      if ((event.target as HTMLElement | null)?.closest?.("input, textarea, [contenteditable='true']")) return true;
+      run();
+      return false;
+    });
+    key([], "h", () => this.host.toggleHighlightMode());
+    key([], "n", () => this.readSelection().length ? this.addHighlight(true) : this.host.openNote(this, null));
+    key([], "a", () => this.host.toggleAnnotations());
+    key([], "t", () => void this.openOutline());
+    key([], "g", () => this.contentEl.querySelector<HTMLInputElement>(".reader-page-input")?.select());
+    key([], "=", () => this.zoomBy(1));
+    key(["Shift"], "+", () => this.zoomBy(1));
+    key([], "-", () => this.zoomBy(-1));
+    key([], "0", () => this.resetZoom());
+    for (const name of ["Delete", "Backspace"]) key([], name, () => {
+      const annotation = this.popup.mode === "annotation" ? this.popup.annotation : null;
+      if (!annotation || !this.record) return;
+      this.popup.hide();
+      deleteAnnotation(this.host.store, this.record, annotation);
+    });
+  }
+
   // ---- Selection and popup ----
 
   private bindSelection(): void {
@@ -858,7 +889,7 @@ export class ReaderView extends FileView {
     this.modeAction.toggleClass("is-active", on);
     this.modeAction.style.setProperty("--reader-mode-color", color.value);
     this.modeAction.setAttribute("aria-pressed", String(on));
-    this.modeAction.setAttribute("aria-label", `${on ? "Highlight mode is on" : "Turn on highlight mode"}: selecting text highlights it in ${color.name}. Right-click to choose the color.`);
+    this.modeAction.setAttribute("aria-label", `${on ? "Highlight mode is on" : "Turn on highlight mode"}: selecting text highlights it in ${color.name}. Right-click to choose the color. (H)`);
   }
 
   private async persist(): Promise<void> {
