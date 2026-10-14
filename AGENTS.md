@@ -14,7 +14,7 @@ When the task is complete, run `pnpm build` and `pnpm test`, and commit only the
 
 ## Development vaults
 
-Use each checkout's generated `.dev-vault/` for runtime checks. It is disposable and excluded from Git. Keep reusable fixture changes in `scripts/dev-vault.mjs`; keep personal books and credentials outside this project. Read `README.md` for build, reload, and runtime verification commands. Do runtime checks with `pnpm headless`, never by opening, focusing, or driving the user's Obsidian; it runs a windowless Obsidian that does not take focus.
+Use each checkout's generated `.dev-vault/` for runtime checks. It is disposable and excluded from Git. Keep reusable fixture changes in `scripts/dev-vault.mjs`; keep personal books and credentials outside this project. Read `docs/development.md` for build, reload, and runtime verification commands. Do runtime checks with `pnpm headless`, never by opening, focusing, or driving the user's Obsidian; it runs a windowless Obsidian that does not take focus.
 
 ## Product direction
 
