@@ -73,6 +73,9 @@ test("book note settings have defaults and clean paths", () => {
   assert.equal(defaults.noteTemplate, "");
   assert.equal(defaults.noteOpening, "split");
   assert.equal(defaults.highlightMode, false);
+  assert.equal(defaults.showAnnotationsOnOpen, true);
+  assert.equal(loadSettings({ showAnnotationsOnOpen: false }).showAnnotationsOnOpen, false);
+  assert.equal(loadSettings({ showAnnotationsOnOpen: "no" }).showAnnotationsOnOpen, true);
   assert.equal(defaults.highlightModeColor, "yellow");
   assert.equal(loadSettings({ highlightModeColor: "blue" }).highlightModeColor, "blue");
   assert.equal(loadSettings({ highlightModeColor: "not an id" }).highlightModeColor, "yellow");

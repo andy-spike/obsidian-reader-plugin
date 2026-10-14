@@ -15,6 +15,8 @@ export interface ReaderSettings {
   highlightMode: boolean;
   /** The color highlight mode uses, chosen by right-clicking its button. Primary until changed, or if the color is removed. */
   highlightModeColor: string;
+  /** Open the annotations panel whenever a PDF opens in Reader. */
+  showAnnotationsOnOpen: boolean;
 }
 export const NOTES_FOLDER = "Book notes";
 
@@ -44,7 +46,7 @@ export function colorOf(settings: ReaderSettings, id: string): HighlightColor {
 export const FIXED_COLORS = DEFAULT_COLORS.length;
 
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; noteOpening?: unknown; highlightMode?: unknown; highlightModeColor?: unknown };
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; noteOpening?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown };
   const valid = Array.isArray(data.colors)
     ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
@@ -61,6 +63,7 @@ export function loadSettings(saved: unknown): ReaderSettings {
     noteTemplate: typeof data.noteTemplate === "string" ? cleanFolder(data.noteTemplate) ?? "" : "",
     noteOpening: data.noteOpening === "tab" ? "tab" : "split",
     highlightMode: data.highlightMode === true,
+    showAnnotationsOnOpen: data.showAnnotationsOnOpen !== false,
     highlightModeColor: typeof data.highlightModeColor === "string" && /^[\w-]+$/.test(data.highlightModeColor) ? data.highlightModeColor : DEFAULT_COLORS[0]!.id,
   };
 }
@@ -97,6 +100,15 @@ export class ReaderSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     const { settings } = this.host;
     containerEl.empty();
+
+    new Setting(containerEl).setName("Reader").setHeading();
+    new Setting(containerEl)
+      .setName("Open the annotations panel with PDFs")
+      .setDesc("Show the panel of highlights whenever a PDF opens in Reader. When off, open it with the sidebar button in the Reader header, the A key, or the Toggle PDF annotations command.")
+      .addToggle(toggle => toggle.setValue(settings.showAnnotationsOnOpen).onChange(async value => {
+        settings.showAnnotationsOnOpen = value;
+        await this.host.saveSettings();
+      }));
 
     new Setting(containerEl).setName("Highlight colors").setHeading()
       .setDesc("Colors appear in the selection popup in this order. Primary and Secondary always come first; you can change their color and name. Colors you add follow them, and you can reorder them with the handles or arrows. Give each one a meaning, such as “Key idea” or “Question”.");

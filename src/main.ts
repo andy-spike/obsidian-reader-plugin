@@ -80,7 +80,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       if (this.reader === reader || this.app.workspace.getMostRecentLeaf() === reader.leaf || this.app.workspace.getActiveViewOfType(ReaderView) === reader || noteActive) {
         this.reader = reader.getRecord() ? reader : null;
         refreshSidebar();
-        if (this.reader && !sidebarDismissed) void showAnnotations();
+        if (this.reader && !sidebarDismissed && this.settings.showAnnotationsOnOpen) void showAnnotations();
       }
     };
     this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, store, () => this.reader, () => this.settings));
