@@ -23,7 +23,7 @@ const USAGE = `Usage: pnpm headless <command>
   hover <target>         Move the pointer to a CSS selector or x,y (real events: tooltips and :hover work)
   click <target>         Click a CSS selector or x,y
   drag <from> <to>       Press at one target, move to the other in small steps, and release
-  press <key>            Press a key, such as Escape, Enter, ArrowDown, or a
+  press <key>            Press a key, such as Escape, Enter, ArrowDown, a, or Shift+Enter
   type <text>            Insert text at the focus
 
 Add --window=<text> to target a window whose title contains <text>, such as --window=Settings.
@@ -197,10 +197,14 @@ async function drive(state) {
         return `Dragged from ${Math.round(from.x)},${Math.round(from.y)} to ${Math.round(to.x)},${Math.round(to.y)}`;
       }
       case "press": {
-        const code = KEYS[argument] ?? argument.toUpperCase().charCodeAt(0);
-        const text = argument.length === 1 ? argument : argument === "Enter" ? "\r" : undefined;
-        await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key: argument, windowsVirtualKeyCode: code, text });
-        await send("Input.dispatchKeyEvent", { type: "keyUp", key: argument, windowsVirtualKeyCode: code });
+        // "Shift+Enter" or "Ctrl+a": modifiers before the key, joined with +.
+        const parts = argument.split(/\+(?=.)/);
+        const key = parts.pop();
+        const modifiers = parts.reduce((bits, name) => bits | ({ Alt: 1, Ctrl: 2, Control: 2, Meta: 4, Cmd: 4, Shift: 8 }[name] ?? 0), 0);
+        const code = KEYS[key] ?? key.toUpperCase().charCodeAt(0);
+        const text = modifiers & ~8 ? undefined : key.length === 1 ? key : key === "Enter" ? "\r" : undefined;
+        await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key, windowsVirtualKeyCode: code, text, modifiers });
+        await send("Input.dispatchKeyEvent", { type: "keyUp", key, windowsVirtualKeyCode: code, modifiers });
         return `Pressed ${argument}`;
       }
       case "type":
