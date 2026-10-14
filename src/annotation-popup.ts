@@ -10,14 +10,19 @@ type PopupCard = ReturnType<typeof mount<Record<string, never>, {
   clear(): void;
 }>>;
 
-/** `preview` tints the selection in a color while its swatch is hovered or focused, and clears it with null. */
-/** `note` opens the book note at the passage's section, highlighting the selection first. */
-export interface SelectionActions { highlight(color: string): void; note(): void; copy(): void; preview(color: string | null): void }
+export interface SelectionActions {
+  highlight(color: string): void;
+  /** Highlight the selection before opening its book-note section. */
+  note(): void;
+  copy(): void;
+  /** Preview the hovered or focused swatch; null clears the preview. */
+  preview(color: string | null): void;
+}
 export interface AnnotationActions { recolor(color: string): void; note(): void; copy(): void; remove(): void }
 /** Horizontal position and the vertical span the card should not cover, in viewport coordinates. */
 export interface PopupAnchor { clientX: number; top: number; bottom: number; above: boolean }
 
-/** One floating card for a text selection or an existing highlight. It lives in the scrolled content so it moves with the passage. This class places and dismisses the card; `AnnotationPopup.svelte` renders its contents. */
+/** Positions the Svelte popup in the scrolling content so it stays beside its passage. */
 export class AnnotationPopup {
   readonly el: HTMLElement;
   mode: "selection" | "annotation" | null = null;
@@ -62,7 +67,7 @@ export class AnnotationPopup {
     this.show(at);
   }
 
-  /** Reflects edits made elsewhere, such as the sidebar or another tab of the same PDF. */
+  /** Refresh after palette changes or edits in another Reader tab. */
   sync(colors: HighlightColor[]): void {
     this.card.sync(colors);
     flushSync();

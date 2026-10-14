@@ -1,9 +1,9 @@
+import type { Annotation, AnnotationRecord } from "./annotations";
+
 /**
- * The text format of book notes: one Markdown note per PDF that holds a quote section for every highlight, followed by
- * whatever the reader writes about it. The note belongs to the reader. These functions add or remove whole sections and
- * never change text the reader wrote; they work on plain strings so they can be tested without Obsidian.
+ * Each highlight has a quote section in its PDF's book note. Reconciliation preserves the reader's writing.
  *
- * A section looks like this. The link in the first line carries the highlight's ID, which is how the section is found again.
+ * The passage link identifies the highlight; the block ID lets other notes link to the section.
  *
  *     > [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=…&annotation=…&page=34)
  *     > The quoted passage, as one flowing line.
@@ -14,11 +14,10 @@
  *
  *     ---
  *
- * A `---` line separates a section from the one before it, unless a heading of the reader's sits between them. The separator
- * belongs to the section below it, so it goes away with that section and is never part of the writing above it.
+ * Separators belong to the section below them. A reader's heading replaces the separator.
  */
 
-export interface SectionInput {
+interface SectionInput {
   documentId: string;
   annotationId: string;
   page: number;
@@ -43,29 +42,33 @@ export interface Section {
 const HEADER = /^>\s*\[!quote\][^\n]*?obsidian:\/\/reader-plugin\?[^)\s]*?annotation=([\w-]+)/;
 const HEADING = /^#{1,6}\s/;
 
-/** Obsidian shows block IDs while editing, so a section uses the first 8 characters of the highlight's ID, unique within one note. */
-export function blockId(annotationId: string): string {
+/** Shorten block IDs because Obsidian shows them while editing. */
+function blockId(annotationId: string): string {
   return annotationId.slice(0, 8);
 }
 
-export function passageUri(documentId: string, annotationId: string, page: number): string {
+function passageUri(documentId: string, annotationId: string, page: number): string {
   return `obsidian://reader-plugin?document=${documentId}&annotation=${annotationId}&page=${page}`;
 }
 
 const SEPARATOR = "---";
 
 /**
- * A quote as one flowing line, as a section writes it. PDF text keeps the page's line breaks; they become spaces, and a word
- * hyphenated across a line break is joined without a space, keeping the hyphen, so no letters are lost. Compare a section's
- * `quote` to this to see if it was edited; sections written before quotes flowed compare equal.
+ * Join PDF line breaks, preserving hyphens within words. The same normalization detects user edits to older quotes.
  */
-export function quoteText(quote: string): string {
+function quoteText(quote: string): string {
   const lines = quote.replace(/\r\n?/g, "\n").split("\n").map(line => line.trim()).filter(Boolean);
-  return lines.reduce((text, line) => !text ? line : /\p{L}-$/u.test(text) && /^\p{Ll}/u.test(line) ? text + line : `${text} ${line}`, "").replace(/\s+/g, " ");
+  let text = "";
+  for (const line of lines) {
+    if (!text) text = line;
+    else if (/\p{L}-$/u.test(text) && /^\p{Ll}/u.test(line)) text += line;
+    else text += ` ${line}`;
+  }
+  return text.replace(/\s+/g, " ");
 }
 
 /** The lines of a new section, without the blank lines around it. */
-export function sectionLines(input: SectionInput): string[] {
+function sectionLines(input: SectionInput): string[] {
   return [
     `> [!quote] p. ${input.page} · [Open passage](${passageUri(input.documentId, input.annotationId, input.page)})`,
     `> ${quoteText(input.quote)}`,
@@ -112,7 +115,7 @@ export function findSections(text: string): Section[] {
 }
 
 /** Adds the `---` line that each section directly following another one should have, as in notes written before separators. */
-export function addSeparators(text: string): string {
+function addSeparators(text: string): string {
   const sections = findSections(text);
   const lines = text.split("\n");
   let changed = false;
@@ -127,7 +130,7 @@ export function addSeparators(text: string): string {
 }
 
 /** Rewrites unedited quotes that still keep the PDF's line breaks as one flowing line. `quotes` maps highlight IDs to their quotes. */
-export function flowQuotes(text: string, quotes: Map<string, string>): string {
+function flowQuotes(text: string, quotes: Map<string, string>): string {
   const lines = text.split("\n");
   let changed = false;
   for (const section of findSections(text).reverse()) {
@@ -156,7 +159,7 @@ function finish(lines: string[]): string {
  * Adds a section before `before`, or at the end when it is null. Headings directly above `before` stay with it,
  * so a passage from an earlier chapter lands above that chapter's heading.
  */
-export function insertSection(text: string, input: SectionInput, before: Section | null): string {
+function insertSection(text: string, input: SectionInput, before: Section | null): string {
   const lines = text.split("\n");
   let at = lines.length;
   if (before) {
@@ -175,7 +178,7 @@ export function insertSection(text: string, input: SectionInput, before: Section
 }
 
 /** Removes a section's quote and block ID. Only call this for sections with nothing written under them and an unedited quote. */
-export function removeSection(text: string, section: Section): string {
+function removeSection(text: string, section: Section): string {
   const lines = text.split("\n");
   const sections = findSections(text);
   const next = sections[sections.findIndex(candidate => candidate.id === section.id) + 1];
@@ -188,7 +191,7 @@ export function removeSection(text: string, section: Section): string {
 }
 
 /** Adds text at the end of a section's writing. */
-export function appendWriting(text: string, section: Section, writing: string): string {
+function appendWriting(text: string, section: Section, writing: string): string {
   const lines = text.split("\n");
   let at = section.writingEnd;
   while (at > section.writingStart && !lines[at - 1]!.trim()) at--;
@@ -200,15 +203,15 @@ export function appendWriting(text: string, section: Section, writing: string): 
 }
 
 /** Removes the `· [[book.pdf#page=N|PDF]]` link that earlier sections had after **Open passage**. Only section first lines change. */
-export function dropPdfLinks(text: string): string {
+function dropPdfLinks(text: string): string {
   return text.split("\n").map(line => HEADER.test(line) ? line.replace(/ · \[\[[^\]\n]*#page=\d+\|PDF\]\]\s*$/, "") : line).join("\n");
 }
 
 /** Comments from before book notes, to place under their passages' quotes. */
-export interface MovedComment { id: string; comment: string }
+interface MovedComment { id: string; comment: string }
 
 /** Adds each comment under its section, unless that section already holds it, as after an interrupted move. */
-export function placeComments(text: string, comments: MovedComment[]): string {
+function placeComments(text: string, comments: MovedComment[]): string {
   for (const { id, comment } of comments) {
     const section = findSections(text).find(candidate => candidate.id === id);
     if (section && !hasComment(section.writing, comment)) text = appendWriting(text, section, comment);
@@ -217,7 +220,7 @@ export function placeComments(text: string, comments: MovedComment[]): string {
 }
 
 /** IDs of the comments that the note holds under their passages, so they can safely be cleared from the record. */
-export function placedComments(text: string, comments: MovedComment[]): Set<string> {
+function placedComments(text: string, comments: MovedComment[]): Set<string> {
   const sections = findSections(text);
   return new Set(comments.filter(({ id, comment }) => sections.some(section => section.id === id && hasComment(section.writing, comment))).map(({ id }) => id));
 }
@@ -239,4 +242,44 @@ export function fillTemplate(template: string, values: { title: string; source: 
 export function defaultNoteHeader(source: string): string {
   // Obsidian shows the file name as the note's title, so the note starts without a heading.
   return `---\nsource: "${source.replace(/"/g, '\\"')}"\ntags: [book-note]\n---\n`;
+}
+
+
+const byPosition = (a: Annotation, b: Annotation) => a.page - b.page || a.position.start - b.position.start;
+const comments = (record: AnnotationRecord): MovedComment[] => [...record.annotations].sort(byPosition)
+  .filter(annotation => annotation.comment.trim()).map(annotation => ({ id: annotation.id, comment: annotation.comment }));
+
+/** Owns the complete text policy. Only quotes confirmed after a successful vault write may later be removed. */
+export class BookNoteReconciler {
+  private quotes = new Map<string, Map<string, string>>();
+
+  reconcile(text: string, record: AnnotationRecord): string {
+    text = dropPdfLinks(text);
+    const quotes = new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]));
+    text = flowQuotes(text, quotes);
+    text = addSeparators(text);
+    const ids = new Set(record.annotations.map(annotation => annotation.id));
+    const known = this.quotes.get(record.documentId);
+    for (const section of findSections(text).reverse()) {
+      if (ids.has(section.id) || section.writing) continue;
+      if (known?.get(section.id) === quoteText(section.quote)) text = removeSection(text, section);
+    }
+    const sorted = [...record.annotations].sort(byPosition);
+    for (const annotation of sorted) {
+      const sections = findSections(text);
+      if (sections.some(section => section.id === annotation.id)) continue;
+      const later = sections.find(section => {
+        const other = record.annotations.find(candidate => candidate.id === section.id);
+        return other && byPosition(annotation, other) < 0;
+      }) ?? null;
+      text = insertSection(text, { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact }, later);
+    }
+    return placeComments(text, comments(record));
+  }
+
+  /** Call with the note read back from disk. Only these legacy comments are safe to clear from the JSON record. */
+  confirm(record: AnnotationRecord, text: string): Set<string> {
+    this.quotes.set(record.documentId, new Map(record.annotations.map(annotation => [annotation.id, quoteText(annotation.quote.exact)])));
+    return placedComments(text, comments(record));
+  }
 }

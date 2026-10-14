@@ -73,6 +73,16 @@ pnpm headless stop
 
 Add `--window=Settings` to drive the settings window, which Obsidian opens separately. The headless Obsidian and your own Obsidian open the same vault folder. Reader Plugin's settings and reading positions follow each other's changes, but both write the vault's `.obsidian/workspace.json`, so each may pick up the other's last tab layout. Close the development vault in your own Obsidian while headless checks run if that gets in the way.
 
+## Architecture and tests
+
+Three modules keep reading workflow rules out of plugin startup:
+
+- `BookNoteReconciler` in `src/book-note.ts` owns complete note reconciliation, including reading order, legacy formatting, and the rules that preserve writing and edited quotes. Its low-level text edits are internal. `BookNotes` handles vault writes and confirms migrated comments only after reading the note back from disk.
+- `BookNoteFollowing` in `src/book-note-following.ts` owns the active PDF, dismissal, and serialized opening of book notes. `ObsidianBookNoteWorkspace` supplies tab and focus operations. Tests use an in-memory workspace adapter to exercise complete event sequences.
+- `SavedReadingState` in `src/reading-state.ts` owns the shared settings and reading-position file, including debounce, serialized snapshots, external reloads, renames, eviction, retries, and the final flush on unloading. Pending positions remain local until their write succeeds. External changes received during a write trigger a fresh snapshot after it finishes.
+
+Tests exercise these modules through the same interfaces their callers use. `pnpm test` covers preservation, migration durability, tab transitions, and delayed or failed writes. Keep layout, deferred-tab, and actual focus checks in the headless development vault, since an in-memory adapter cannot verify Obsidian's rendering and window behavior.
+
 ## Commits
 
 Agents should commit each completed unit of work, such as a verified fix or a finished feature. Commit often, keeping each commit focused so the history clearly records progress.

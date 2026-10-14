@@ -1,20 +1,18 @@
 import { App, MarkdownView, normalizePath, Notice, TFile, WorkspaceLeaf } from "obsidian";
-import type { Annotation, AnnotationRecord, AnnotationStore } from "./annotations";
-import { addSeparators, defaultNoteHeader, dropPdfLinks, fillTemplate, flowQuotes, findSections, insertSection, noteFileName, placeComments, placedComments, quoteText, removeSection, type MovedComment, type SectionInput } from "./book-note";
+import type { AnnotationRecord, AnnotationStore } from "./annotations";
+import { BookNoteReconciler, defaultNoteHeader, fillTemplate, findSections, noteFileName } from "./book-note";
 import type { ReaderSettings } from "./settings";
 
-const localDate = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; };
-const byPosition = (a: Annotation, b: Annotation) => a.page - b.page || a.position.start - b.position.start;
-/** Comments still in the record from before book notes, in reading order. */
-const comments = (record: AnnotationRecord): MovedComment[] =>
-  [...record.annotations].sort(byPosition).filter(annotation => annotation.comment.trim()).map(annotation => ({ id: annotation.id, comment: annotation.comment }));
-
+function localDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 /**
- * Keeps each PDF's book note in step with its highlights. The note belongs to the reader: this class creates it, adds a
- * quote section for each new highlight, and removes the section of a deleted highlight only when nothing is written
- * under it. It reads the note to show what the reader wrote, and never edits that writing.
- *
- * Changes run after saves made in this window, so two Obsidian windows on one vault don't both add the same section.
+ * Reads and writes book notes while the reconciler protects the reader's writing.
+ * Local annotation saves trigger updates; other windows handle their own changes.
  */
 export class BookNotes {
   private queues = new Map<string, Promise<unknown>>();
@@ -24,15 +22,11 @@ export class BookNotes {
   /** Book note paths that have been read, mapped to their document IDs, to refresh previews when a note changes. */
   private paths = new Map<string, string>();
   private listeners = new Set<(documentId: string) => void>();
-  /**
-   * The quotes of each PDF's highlights at its last update, by document ID and then annotation ID. A deleted highlight is
-   * no longer in its record, so this is how an untouched section is told apart from one whose quote the reader edited.
-   */
-  private quotes = new Map<string, Map<string, string>>();
+  private reconciler = new BookNoteReconciler();
 
   constructor(private app: App, private store: AnnotationStore, private settings: () => ReaderSettings) {}
 
-  /** Whether a path is a book note that has been read, such as the one shown in the sidebar. */
+  /** Recognizes note paths already loaded by this window. */
   isNote(path: unknown): boolean {
     return typeof path === "string" && this.paths.has(path);
   }
@@ -42,7 +36,6 @@ export class BookNotes {
     return () => this.listeners.delete(listener);
   }
 
-  /** The book note, if it exists. */
   file(record: AnnotationRecord): TFile | null {
     const file = record.notePath ? this.app.vault.getAbstractFileByPath(record.notePath) : null;
     return file instanceof TFile ? file : null;
@@ -53,19 +46,19 @@ export class BookNotes {
     return this.writings.get(record.documentId)?.get(annotationId) ?? "";
   }
 
-  /** Reads the book note so previews can show it. Doesn't create or change anything. */
+  /** Read writing previews without creating or changing a note. */
   async load(record: AnnotationRecord): Promise<void> {
     const file = this.file(record);
     if (file) this.read(record.documentId, file.path, await this.app.vault.cachedRead(file));
   }
 
-  /** Call when a file in the vault changes; a book note's previews are read again. */
+  /** Refresh previews after a vault edit. */
   async changed(file: TFile): Promise<void> {
     const documentId = this.paths.get(file.path);
     if (documentId) this.read(documentId, file.path, await this.app.vault.cachedRead(file));
   }
 
-  /** Call while a note is being edited, before Obsidian saves it; a book note's previews follow the editor after a short pause. */
+  /** Follow unsaved editor text after a short pause. */
   edited(path: string, text: () => string): void {
     const documentId = this.paths.get(path);
     if (!documentId) return;
@@ -116,7 +109,7 @@ export class BookNotes {
     this.listeners.clear();
   }
 
-  /** Creates the book note if needed and adds or removes sections to match the highlights. Runs one at a time per PDF. */
+  /** Create or reconcile a note, one update at a time per PDF. */
   sync(record: AnnotationRecord): Promise<TFile | null> {
     const previous = this.queues.get(record.documentId) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(() => this.update(record));
@@ -126,19 +119,18 @@ export class BookNotes {
 
   private async update(record: AnnotationRecord): Promise<TFile | null> {
     let file = this.file(record);
-    if (file) await this.app.vault.process(file, text => this.reconcile(text, record));
+    if (file) await this.app.vault.process(file, text => this.reconciler.reconcile(text, record));
     else if (record.annotations.length) file = await this.create(record);
     let changed = false;
     if (file) {
       const text = await this.app.vault.read(file);
       this.read(record.documentId, file.path, text);
-      this.quotes.set(record.documentId, new Map(record.annotations.map(annotation => [annotation.id, quoteText(annotation.quote.exact)])));
       // Comments from before book notes are cleared from the record only once the note on disk holds them.
-      const placed = placedComments(text, comments(record));
+      const placed = this.reconciler.confirm(record, text);
       for (const annotation of record.annotations) if (placed.has(annotation.id)) { annotation.comment = ""; changed = true; }
       if (record.notePath !== file.path) { record.notePath = file.path; changed = true; }
     }
-    if (!record.exportRetired && !comments(record).length) {
+    if (!record.exportRetired && !record.annotations.some(annotation => annotation.comment.trim())) {
       await this.retireExport(record);
       record.exportRetired = true;
       changed = true;
@@ -147,10 +139,7 @@ export class BookNotes {
     return file;
   }
 
-  /**
-   * Before book notes, the plugin wrote a Markdown file of passages and comments next to each record. The book note replaces
-   * it, so it goes to the trash, unless a note links to it; then it stays and a notice says so.
-   */
+  /** Trash the legacy Markdown export unless other notes still link to it. */
   private async retireExport(record: AnnotationRecord): Promise<void> {
     const path = normalizePath(`${this.store.folder}/${record.documentId}.md`);
     const old = this.app.vault.getAbstractFileByPath(path);
@@ -165,36 +154,6 @@ export class BookNotes {
       }
     }
     await this.app.fileManager.trashFile(old);
-  }
-
-  private input(record: AnnotationRecord, annotation: Annotation): SectionInput {
-    return { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact };
-  }
-
-  /**
-   * Adds missing sections in reading order. Removes the section of a highlight deleted since the last update, only when nothing
-   * is written under it and its quote is unchanged; sections of highlights this window never saw are left alone.
-   */
-  private reconcile(text: string, record: AnnotationRecord): string {
-    // Notes written by earlier versions get the current format: no PDF link, flowing quotes, and separators.
-    text = addSeparators(flowQuotes(dropPdfLinks(text), new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]))));
-    const ids = new Set(record.annotations.map(annotation => annotation.id));
-    const known = this.quotes.get(record.documentId);
-    for (const section of findSections(text).reverse()) {
-      if (!ids.has(section.id) && !section.writing && known?.get(section.id) === quoteText(section.quote)) text = removeSection(text, section);
-    }
-    const sorted = [...record.annotations].sort(byPosition);
-    for (const annotation of sorted) {
-      const sections = findSections(text);
-      if (sections.some(section => section.id === annotation.id)) continue;
-      // The first section of a highlight that comes later in the book, so the note keeps reading order.
-      const later = sections.find(section => {
-        const other = record.annotations.find(candidate => candidate.id === section.id);
-        return other && byPosition(annotation, other) < 0;
-      }) ?? null;
-      text = insertSection(text, this.input(record, annotation), later);
-    }
-    return placeComments(text, comments(record));
   }
 
   private async create(record: AnnotationRecord): Promise<TFile> {
@@ -214,7 +173,7 @@ export class BookNotes {
     let header = defaultNoteHeader(source);
     const template = this.settings().noteTemplate ? this.app.vault.getAbstractFileByPath(this.settings().noteTemplate) : null;
     if (template instanceof TFile) header = fillTemplate(await this.app.vault.read(template), { title, source, date: localDate() });
-    const file = await this.app.vault.create(path, this.reconcile(header.endsWith("\n") ? header : header + "\n", record));
+    const file = await this.app.vault.create(path, this.reconciler.reconcile(header.endsWith("\n") ? header : header + "\n", record));
     if (template instanceof TFile) {
       await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => { frontmatter.source ??= source; });
     }
@@ -226,14 +185,11 @@ export class BookNotes {
   }
 
   private async adopt(file: TFile, record: AnnotationRecord): Promise<TFile> {
-    await this.app.vault.process(file, text => this.reconcile(text, record));
+    await this.app.vault.process(file, text => this.reconciler.reconcile(text, record));
     return file;
   }
 
-  /**
-   * Opens the book note, creating it if needed, in the tab `show` puts it in (the sidebar). With an annotation, the cursor goes to the
-   * end of what is written under that passage, leaving a blank line to type on when nothing is written yet.
-   */
+  /** Open the note in the supplied tab, with the cursor ready to write under the requested passage. */
   async open(record: AnnotationRecord, annotationId: string | null, show: (file: TFile) => Promise<WorkspaceLeaf | null>): Promise<void> {
     const file = await this.sync(record);
     if (!file) return;
