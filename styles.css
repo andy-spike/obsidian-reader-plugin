@@ -86,9 +86,8 @@ textarea.reader-comment-editor { display: block; box-sizing: border-box; resize:
 .reader-color-setting .setting-item-control { justify-content: flex-start; }
 .reader-color-setting input[type="text"] { flex: 1; }
 /* Table of contents: Obsidian's tree rows in a tall dialog, with the list scrolling under the search field. */
-/* The dialog fits its rows up to a limit, then the list scrolls. It sits near the top like the quick switcher, so opening a chapter grows it downward instead of moving it. */
-.modal-container:has(> .reader-outline-modal) { align-items: flex-start; }
-.reader-outline-modal { display: flex; flex-direction: column; width: min(640px, 92vw); height: auto; max-height: min(720px, 80vh); margin-top: 10vh; }
+/* The dialog fits its rows up to a limit, then the list scrolls. Obsidian centers it in the window. */
+.reader-outline-modal { display: flex; flex-direction: column; width: min(640px, 92vw); height: auto; max-height: min(720px, 80vh); }
 .reader-outline-modal .modal-content { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
 .reader-outline-search { flex: none; margin-bottom: var(--size-4-2); }
 .reader-outline-search input { width: 100%; }
