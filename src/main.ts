@@ -7,7 +7,7 @@ import { BookNotes } from "./book-notes";
 import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
 import { stopPdfWorker } from "./pdf-engine";
-import { loadSettings, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
+import { colorOf, loadSettings, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
 
 export default class ReaderPlugin extends Plugin implements SettingsHost {
   settings!: ReaderSettings;
@@ -23,6 +23,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   private unsavedPositions = new Set<string>();
   private settingTab!: ReaderSettingTab;
   private bookNotes!: BookNotes;
+  /** Redraws the highlight colors of quotes in book notes. */
+  private paintQuotes: (() => void) | null = null;
   async onload(): Promise<void> {
     const data = await this.loadData();
     this.settings = loadSettings(data);
@@ -35,55 +37,98 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.registerEvent(this.app.vault.on("modify", file => { if (file instanceof TFile) void bookNotes.changed(file); }));
     this.registerEvent(this.app.vault.on("delete", file => bookNotes.deleted(file.path)));
     this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => { if (info.file) bookNotes.edited(info.file.path, () => editor.getValue()); }));
-    // A sidebar not shown since Obsidian started is a placeholder; it draws itself when it loads.
-    const refreshSidebar = () => this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => { if (leaf.view instanceof AnnotationsView) leaf.view.refresh(); });
-    let sidebarOpening: Promise<void> | null = null;
-    const showAnnotations = (): Promise<void> => {
-      if (sidebarOpening) return sidebarOpening;
-      sidebarOpening = (async () => {
-        const existing = this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW)[0];
-        const leaf = existing ?? this.app.workspace.getRightLeaf(false);
-        if (!leaf) return;
-        if (!existing) await leaf.setViewState({ type: ANNOTATIONS_VIEW, active: false });
-        refreshSidebar();
+    const workspace = this.app.workspace;
+    const inSidebar = (leaf: WorkspaceLeaf) => leaf.getRoot() === workspace.rightSplit || leaf.getRoot() === workspace.leftSplit;
+    /**
+     * The sidebar tab that shows the active PDF's book note: a note tab, or a placeholder while that PDF has no note yet.
+     * Found again after a restart by its saved state, since a tab not shown yet is still a placeholder itself.
+     */
+    const panelLeaf = (): WorkspaceLeaf | null => {
+      let found: WorkspaceLeaf | null = workspace.getLeavesOfType(ANNOTATIONS_VIEW)[0] ?? null;
+      if (!found) workspace.iterateAllLeaves(leaf => {
+        const state = leaf.getViewState();
+        if (!found && inSidebar(leaf) && state.type === "markdown" && bookNotes.isNote(state.state?.file)) found = leaf;
+      });
+      return found;
+    };
+    const refreshPanel = () => workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => { if (leaf.view instanceof AnnotationsView) leaf.view.refresh(); });
+    let panelOpening: Promise<WorkspaceLeaf | null> | null = null;
+    /** Shows the active PDF's book note in the sidebar tab, creating the tab if needed. Reveals it when asked. */
+    const showPanel = (reveal: boolean): Promise<WorkspaceLeaf | null> => {
+      const run = async (): Promise<WorkspaceLeaf | null> => {
+        const record = this.reader?.getRecord() ?? null;
+        const file = record ? bookNotes.file(record) : null;
+        const leaf = panelLeaf() ?? workspace.getRightLeaf(false);
+        if (!leaf) return null;
+        const state = leaf.getViewState();
+        if (file) {
+          if (state.type !== "markdown" || state.state?.file !== file.path) await leaf.setViewState({ type: "markdown", state: { file: file.path, mode: "source" }, active: false });
+        } else if (record || state.type === "empty") {
+          if (state.type !== ANNOTATIONS_VIEW) await leaf.setViewState({ type: ANNOTATIONS_VIEW, active: false });
+        }
+        refreshPanel();
+        if (!reveal) return leaf;
         // revealLeaf brings a background Obsidian window to the front. A reader also loads without the user,
         // such as when Obsidian restores tabs or the plugin reloads, so then only open a collapsed sidebar.
-        if (leaf.view.containerEl.doc.hasFocus()) await this.app.workspace.revealLeaf(leaf);
-        else {
-          const root = leaf.getRoot();
-          if ((root === this.app.workspace.rightSplit || root === this.app.workspace.leftSplit) && (root as WorkspaceSidedock).collapsed) (root as WorkspaceSidedock).expand();
-        }
-      })().finally(() => { sidebarOpening = null; });
-      return sidebarOpening;
+        if (leaf.view.containerEl.doc.hasFocus()) await workspace.revealLeaf(leaf);
+        else if (inSidebar(leaf) && (leaf.getRoot() as WorkspaceSidedock).collapsed) (leaf.getRoot() as WorkspaceSidedock).expand();
+        return leaf;
+      };
+      const next = (panelOpening ?? Promise.resolve(null)).catch(() => null).then(run);
+      panelOpening = next;
+      void next.finally(() => { if (panelOpening === next) panelOpening = null; });
+      return next;
     };
+    /** Switches an existing sidebar tab to the active PDF's note, without opening the sidebar. */
+    const updatePanel = () => { if (panelLeaf()) void showPanel(false); };
     /** Set when the reader closes the panel with the toggle, so opening another PDF doesn't bring it straight back. */
-    let sidebarDismissed = false;
+    let panelDismissed = false;
     const toggleAnnotations = async (): Promise<void> => {
-      const leaf = this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW)[0];
-      const root = leaf?.getRoot();
-      const inSidebar = root === this.app.workspace.rightSplit || root === this.app.workspace.leftSplit;
-      const visible = !!leaf && leaf.view.containerEl.isShown() && !(inSidebar && (root as WorkspaceSidedock).collapsed);
+      const leaf = panelLeaf();
+      const sidebar = leaf && inSidebar(leaf);
+      const visible = !!leaf && leaf.view.containerEl.isShown() && !(sidebar && (leaf.getRoot() as WorkspaceSidedock).collapsed);
       if (!visible) {
-        sidebarDismissed = false;
-        await showAnnotations();
+        panelDismissed = false;
+        await showPanel(true);
         return;
       }
-      sidebarDismissed = true;
+      panelDismissed = true;
       // In a sidebar, collapse it like Obsidian's own sidebar toggle; elsewhere, close the tab.
-      if (inSidebar) (root as WorkspaceSidedock).collapse();
+      if (sidebar) (leaf.getRoot() as WorkspaceSidedock).collapse();
       else leaf.detach();
     };
     const ready = (reader: ReaderView) => {
       const record = reader.getRecord();
-      if (record) void bookNotes.load(record).then(() => { if (record.annotations.length || !record.exportRetired) bookNotes.schedule(record); });
-      const noteActive = !!record?.notePath && this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path === record.notePath;
-      if (this.reader === reader || this.app.workspace.getMostRecentLeaf() === reader.leaf || this.app.workspace.getActiveViewOfType(ReaderView) === reader || noteActive) {
-        this.reader = reader.getRecord() ? reader : null;
-        refreshSidebar();
-        if (this.reader && !sidebarDismissed && this.settings.showAnnotationsOnOpen) void showAnnotations();
-      }
+      const current = this.reader === reader || workspace.getMostRecentLeaf() === reader.leaf || workspace.getActiveViewOfType(ReaderView) === reader;
+      if (current) this.reader = record ? reader : null;
+      paintQuotes();
+      // The note is read first, so the sidebar can tell it is a book note.
+      void (record ? bookNotes.load(record) : Promise.resolve()).then(() => {
+        if (record && (record.annotations.length || !record.exportRetired)) bookNotes.schedule(record);
+        if (!current || this.reader !== reader) return;
+        if (!panelDismissed && this.settings.showAnnotationsOnOpen && record) void showPanel(true);
+        else updatePanel();
+      });
     };
-    this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, store, () => this.reader, () => this.settings));
+    this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, () => this.reader));
+    /** Book note quotes take their highlight's color, matched by the highlight ID in the quote's link, without changing the note. */
+    const quoteStyle = document.head.createEl("style", { attr: { id: "reader-plugin-quote-colors" } });
+    this.register(() => quoteStyle.remove());
+    let paintFrame = 0;
+    const paintQuotes = () => {
+      if (paintFrame) return;
+      paintFrame = requestAnimationFrame(() => {
+        paintFrame = 0;
+        quoteStyle.textContent = store.loaded().flatMap(record => record.annotations).map(annotation => {
+          const hex = colorOf(this.settings, annotation.color).value.slice(1);
+          const rgb = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16)).join(", ");
+          return `.callout[data-callout="quote"]:has(a[href*="annotation=${annotation.id}"]) { --callout-color: ${rgb}; --reader-color: rgb(${rgb}); }`;
+        }).join("\n");
+      });
+    };
+    this.register(() => cancelAnimationFrame(paintFrame));
+    this.paintQuotes = paintQuotes;
+    this.register(store.subscribe(() => paintQuotes()));
     /** Opens a PDF, reusing a Reader tab that already shows it. Returns the Reader, if it is one. */
     const open = async (file: TFile, page?: number, native = false): Promise<ReaderView | null> => {
       // A tab not shown since Obsidian started is still a placeholder; its saved state names the file, and revealing it loads it.
@@ -109,7 +154,10 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     };
     const openNote = (reader: ReaderView, annotationId: string | null) => {
       const record = reader.getRecord();
-      if (record) void bookNotes.open(record, annotationId, reader.leaf).catch(error => new Notice(`Could not open the book note: ${String(error)}`));
+      if (!record) return;
+      this.reader = reader;
+      panelDismissed = false;
+      void bookNotes.open(record, annotationId, () => showPanel(true)).catch(error => new Notice(`Could not open the book note: ${String(error)}`));
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
       store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(),
@@ -123,10 +171,11 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       lastPosition: path => this.positions.get(path),
       rememberPosition: (path, position) => this.rememberPosition(path, position),
     }));
-    // What you wrote in a book note shows as dots on highlights and previews in the sidebar, so redraw both when it changes.
+    // What you wrote in a book note shows as dots on highlights, so redraw them when it changes.
+    // A PDF's first highlight creates its note; the sidebar tab then switches from its placeholder to the note.
     this.register(bookNotes.subscribe(documentId => {
       this.readers().forEach(reader => { if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations(); });
-      refreshSidebar();
+      if (this.reader?.getRecord()?.documentId === documentId) updatePanel();
     }));
     this.addSettingTab(this.settingTab = new ReaderSettingTab(this.app, this));
     // Saving is silent while it works. Report a failing vault write once, and again when it recovers.
@@ -148,7 +197,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         else new PdfPicker(this.app, file => void open(file, undefined, native)).open();
       },
     });
-    this.addCommand({ id: "show-annotations", name: "Toggle PDF annotations", callback: () => void toggleAnnotations() });
+    this.addCommand({ id: "show-annotations", name: "Toggle book note in sidebar", callback: () => void toggleAnnotations() });
     const routeNow = () => {
       if (!this.routing) return;
       for (const leaf of this.app.workspace.getLeavesOfType("pdf")) {
@@ -182,15 +231,14 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       routePdfs();
       this.readers().forEach(reader => { if (reader.leaf !== leaf) reader.hidePopup(); });
       if (leaf && leaf.view.getViewType() !== "pdf") this.nativeTabs.delete(leaf);
-      // While you write in a book note, the sidebar keeps showing that book's highlights.
+      // Switching to another PDF switches the sidebar to its note. Writing in a book note keeps that book as the active PDF;
+      // other notes leave the sidebar on the last PDF's note.
       const notePath = leaf?.view instanceof MarkdownView ? leaf.view.file?.path : undefined;
       const noteReader = notePath ? this.readers().find(reader => reader.getRecord()?.notePath === notePath) : undefined;
-      if (leaf?.view instanceof ReaderView || noteReader) {
-        this.reader = noteReader ?? (leaf!.view as ReaderView);
-        refreshSidebar();
-      } else if (leaf && leaf.view.getViewType() !== ANNOTATIONS_VIEW && this.app.workspace.getMostRecentLeaf() === leaf) {
-        this.reader = null;
-        refreshSidebar();
+      const reader = noteReader ?? (leaf?.view instanceof ReaderView ? leaf.view : undefined);
+      if (reader && reader !== this.reader) {
+        this.reader = reader;
+        updatePanel();
       }
     }));
     this.app.workspace.onLayoutReady(routePdfs);
@@ -401,7 +449,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
 
   private applySettings(): void {
     this.readers().forEach(reader => reader.refreshSettings());
-    this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => { if (leaf.view instanceof AnnotationsView) leaf.view.refresh(); });
+    this.paintQuotes?.();
   }
 
   /** Moves existing records with the file manager, so links to Markdown files that older versions generated follow them. */

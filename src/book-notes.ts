@@ -32,6 +32,11 @@ export class BookNotes {
 
   constructor(private app: App, private store: AnnotationStore, private settings: () => ReaderSettings) {}
 
+  /** Whether a path is a book note that has been read, such as the one shown in the sidebar. */
+  isNote(path: unknown): boolean {
+    return typeof path === "string" && this.paths.has(path);
+  }
+
   subscribe(listener: (documentId: string) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -226,21 +231,14 @@ export class BookNotes {
   }
 
   /**
-   * Opens the book note, creating it if needed, beside `near` or in a new tab. With an annotation, the cursor goes to the
+   * Opens the book note, creating it if needed, in the tab `show` puts it in (the sidebar). With an annotation, the cursor goes to the
    * end of what is written under that passage, leaving a blank line to type on when nothing is written yet.
    */
-  async open(record: AnnotationRecord, annotationId: string | null, near: WorkspaceLeaf | null): Promise<void> {
+  async open(record: AnnotationRecord, annotationId: string | null, show: (file: TFile) => Promise<WorkspaceLeaf | null>): Promise<void> {
     const file = await this.sync(record);
     if (!file) return;
-    let leaf: WorkspaceLeaf | null = null;
-    this.app.workspace.iterateAllLeaves(candidate => {
-      if (!leaf && candidate.view instanceof MarkdownView && candidate.view.file === file) leaf = candidate;
-    });
-    if (!leaf) {
-      leaf = this.settings().noteOpening === "split" && near ? this.app.workspace.createLeafBySplit(near, "vertical") : this.app.workspace.getLeaf("tab");
-      await leaf.openFile(file, { state: { mode: "source" } });
-    }
-    const target: WorkspaceLeaf = leaf;
+    const target = await show(file);
+    if (!target) return;
     await this.app.workspace.revealLeaf(target);
     this.app.workspace.setActiveLeaf(target, { focus: true });
     if (annotationId && target.view instanceof MarkdownView) this.placeCursor(target.view, annotationId);

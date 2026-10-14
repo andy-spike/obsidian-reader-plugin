@@ -1,32 +1,32 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
-import { mount, unmount } from "svelte";
-import { AnnotationStore } from "./annotations";
-import AnnotationsSidebar from "./components/AnnotationsSidebar.svelte";
 import type { ReaderView } from "./reader-view";
-import { ReaderSettings } from "./settings";
 
+/** Kept from the earlier highlights panel, so layouts that saved it still open into the book note's sidebar tab. */
 export const ANNOTATIONS_VIEW = "reader-plugin-annotations";
 
-/** Obsidian's side panel for the active PDF's highlights. `AnnotationsSidebar.svelte` renders its contents. */
+/**
+ * The sidebar tab shows the active PDF's book note. Until that PDF has a note (its first highlight creates one),
+ * the tab shows this placeholder instead.
+ */
 export class AnnotationsView extends ItemView {
-  private sidebar: ReturnType<typeof mount<Record<string, unknown>, { refresh(): void }>> | null = null;
-
-  constructor(leaf: WorkspaceLeaf, private store: AnnotationStore, private source: () => ReaderView | null, private settings: () => ReaderSettings) { super(leaf); }
+  constructor(leaf: WorkspaceLeaf, private source: () => ReaderView | null) { super(leaf); }
   getViewType(): string { return ANNOTATIONS_VIEW; }
-  getDisplayText(): string { return "PDF annotations"; }
-  getIcon(): string { return "highlighter"; }
+  getDisplayText(): string { return "Book note"; }
+  getIcon(): string { return "notebook-pen"; }
 
-  async onOpen(): Promise<void> {
+  async onOpen(): Promise<void> { this.refresh(); }
+
+  /** Called when the active PDF changes. */
+  refresh(): void {
+    const reader = this.source();
     this.contentEl.empty();
     this.contentEl.addClass("reader-annotations");
-    this.sidebar = mount(AnnotationsSidebar, { target: this.contentEl, props: { store: this.store, source: this.source, settings: this.settings } });
+    if (reader?.file) this.contentEl.createDiv({ cls: "reader-annotations-title", text: reader.file.basename });
+    this.contentEl.createDiv({
+      cls: "reader-empty",
+      text: reader?.file
+        ? "Highlight a passage to start this book's note. Each highlight and everything you write about it collect here."
+        : "Open a PDF to see its book note here.",
+    });
   }
-
-  async onClose(): Promise<void> {
-    if (this.sidebar) await unmount(this.sidebar);
-    this.sidebar = null;
-  }
-
-  /** Called when the active PDF or the settings change. Annotation edits arrive through the store. */
-  refresh(): void { this.sidebar?.refresh(); }
 }

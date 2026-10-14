@@ -71,7 +71,6 @@ test("book note settings have defaults and clean paths", () => {
   const defaults = loadSettings(null);
   assert.equal(defaults.notesFolder, "Book notes");
   assert.equal(defaults.noteTemplate, "");
-  assert.equal(defaults.noteOpening, "split");
   assert.equal(defaults.highlightMode, false);
   assert.equal(defaults.showAnnotationsOnOpen, true);
   assert.equal(loadSettings({ showAnnotationsOnOpen: false }).showAnnotationsOnOpen, false);
@@ -81,10 +80,8 @@ test("book note settings have defaults and clean paths", () => {
   assert.equal(loadSettings({ highlightModeColor: "not an id" }).highlightModeColor, "yellow");
   assert.equal(loadSettings({ highlightMode: true }).highlightMode, true);
   assert.equal(loadSettings({ highlightMode: "yes" }).highlightMode, false);
-  const saved = loadSettings({ notesFolder: " /Reading/Notes/ ", noteTemplate: "Templates/Book.md", noteOpening: "tab" });
+  const saved = loadSettings({ notesFolder: " /Reading/Notes/ ", noteTemplate: "Templates/Book.md" });
   assert.equal(saved.notesFolder, "Reading/Notes");
   assert.equal(saved.noteTemplate, "Templates/Book.md");
-  assert.equal(saved.noteOpening, "tab");
-  assert.equal(loadSettings({ notesFolder: "/", noteOpening: "window" }).notesFolder, "Book notes");
-  assert.equal(loadSettings({ noteOpening: "window" }).noteOpening, "split");
+  assert.equal(loadSettings({ notesFolder: "/" }).notesFolder, "Book notes");
 });

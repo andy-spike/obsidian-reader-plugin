@@ -139,8 +139,7 @@ export class ReaderView extends FileView {
     contentEl.empty();
     contentEl.addClass("reader-view");
     // Each action is placed before the previous one, so they show in the reverse of this order.
-    this.addAction("panel-right", "Toggle annotations (A)", () => this.host.toggleAnnotations());
-    this.addAction("notebook-pen", "Open book note (N)", () => this.host.openNote(this, null));
+    this.addAction("notebook-pen", "Toggle book note (A)", () => this.host.toggleAnnotations());
     this.modeAction = this.addAction("highlighter", "", () => this.host.toggleHighlightMode());
     this.modeAction.addClass("reader-mode-action");
     this.modeAction.addEventListener("contextmenu", event => {
@@ -692,7 +691,8 @@ export class ReaderView extends FileView {
       return false;
     });
     key([], "h", () => this.host.toggleHighlightMode());
-    key([], "n", () => this.readSelection().length ? this.addHighlight(true) : this.host.openNote(this, null));
+    // N highlights a selection and opens its section, opens the section of the highlight whose popup is showing, or opens the note.
+    key([], "n", () => this.readSelection().length ? this.addHighlight(true) : this.host.openNote(this, this.popup.mode === "annotation" ? this.popup.annotation?.id ?? null : null));
     key([], "a", () => this.host.toggleAnnotations());
     key([], "t", () => void this.openOutline());
     key([], "g", () => this.contentEl.querySelector<HTMLInputElement>(".reader-page-input")?.select());

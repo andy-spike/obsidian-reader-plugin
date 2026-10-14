@@ -2,7 +2,6 @@ import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSetting
 import { ANNOTATION_FOLDER } from "./annotations";
 
 export interface HighlightColor { id: string; name: string; value: string }
-export type NoteOpening = "split" | "tab";
 export interface ReaderSettings {
   colors: HighlightColor[];
   folder: string;
@@ -10,12 +9,11 @@ export interface ReaderSettings {
   notesFolder: string;
   /** A note whose text starts each new book note, or empty for the default. */
   noteTemplate: string;
-  noteOpening: NoteOpening;
   /** Highlight a passage as soon as it is selected with the mouse, instead of showing the popup. */
   highlightMode: boolean;
   /** The color highlight mode uses, chosen by right-clicking its button. Primary until changed, or if the color is removed. */
   highlightModeColor: string;
-  /** Open the annotations panel whenever a PDF opens in Reader. */
+  /** Show the PDF's book note in the sidebar whenever a PDF opens in Reader. */
   showAnnotationsOnOpen: boolean;
 }
 export const NOTES_FOLDER = "Book notes";
@@ -46,7 +44,7 @@ export function colorOf(settings: ReaderSettings, id: string): HighlightColor {
 export const FIXED_COLORS = DEFAULT_COLORS.length;
 
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; noteOpening?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown };
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown };
   const valid = Array.isArray(data.colors)
     ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
@@ -61,7 +59,6 @@ export function loadSettings(saved: unknown): ReaderSettings {
     folder: folder ?? ANNOTATION_FOLDER,
     notesFolder: notesFolder ?? NOTES_FOLDER,
     noteTemplate: typeof data.noteTemplate === "string" ? cleanFolder(data.noteTemplate) ?? "" : "",
-    noteOpening: data.noteOpening === "tab" ? "tab" : "split",
     highlightMode: data.highlightMode === true,
     showAnnotationsOnOpen: data.showAnnotationsOnOpen !== false,
     highlightModeColor: typeof data.highlightModeColor === "string" && /^[\w-]+$/.test(data.highlightModeColor) ? data.highlightModeColor : DEFAULT_COLORS[0]!.id,
@@ -103,8 +100,8 @@ export class ReaderSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("Reader").setHeading();
     new Setting(containerEl)
-      .setName("Open the annotations panel with PDFs")
-      .setDesc("Show the panel of highlights whenever a PDF opens in Reader. When off, open it with the sidebar button in the Reader header, the A key, or the Toggle PDF annotations command.")
+      .setName("Show the book note with PDFs")
+      .setDesc("Open the PDF's book note in the sidebar whenever a PDF opens in Reader. When off, open it with the book note button in the Reader header, the A key, or the Toggle book note in sidebar command.")
       .addToggle(toggle => toggle.setValue(settings.showAnnotationsOnOpen).onChange(async value => {
         settings.showAnnotationsOnOpen = value;
         await this.host.saveSettings();
@@ -177,17 +174,6 @@ export class ReaderSettingTab extends PluginSettingTab {
         new NoteSuggest(this.app, text.inputEl, path => { apply(path); void this.host.saveSettings(); });
         saveOnLeave(text.inputEl, apply);
       });
-    new Setting(containerEl)
-      .setName("Open book notes")
-      .setDesc("Where a book note opens from the Reader.")
-      .addDropdown(dropdown => dropdown
-        .addOption("split", "Beside the PDF")
-        .addOption("tab", "In a new tab")
-        .setValue(settings.noteOpening)
-        .onChange(async value => {
-          settings.noteOpening = value === "tab" ? "tab" : "split";
-          await this.host.saveSettings();
-        }));
 
     new Setting(containerEl).setName("Storage").setHeading();
     let pending = settings.folder;

@@ -184,6 +184,9 @@ export class AnnotationStore {
       }
     });
   }
+  /** Records opened so far, such as for coloring their quotes in book notes. */
+  loaded(): AnnotationRecord[] { return [...this.records.values()]; }
+
   async find(id: string): Promise<AnnotationRecord | null> {
     const path = `${this.folder}/${id}.json`;
     if (!/^[\w-]+$/.test(id) || !await this.storage.exists(path)) return null;
