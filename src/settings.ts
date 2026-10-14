@@ -162,9 +162,10 @@ export class ReaderSettingTab extends PluginSettingTab {
     if (to < 0 || to >= colors.length) return;
     const [color] = colors.splice(from, 1);
     colors.splice(to, 0, color!);
-    await this.host.saveSettings();
+    // Redraw before saving, so a dropped row never shows in its old place.
     this.display();
     if (refocus) this.containerEl.querySelectorAll<HTMLElement>(".reader-color-handle").item(to)?.focus();
+    await this.host.saveSettings();
   }
 }
 

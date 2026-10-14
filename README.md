@@ -65,6 +65,7 @@ pnpm headless eval 'app.workspace.getActiveFile()?.path'
 pnpm headless screenshot /tmp/reader.png
 pnpm headless hover '.reader-popup button'   # real pointer input: tooltips and :hover appear
 pnpm headless click 300,400
+pnpm headless drag 353,177 353,317 --window=Settings   # press, move in steps, release
 pnpm headless press Escape
 pnpm headless type 'a comment'
 pnpm headless stop

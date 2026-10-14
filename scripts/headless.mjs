@@ -22,6 +22,7 @@ const USAGE = `Usage: pnpm headless <command>
   screenshot <file.png>  Save a screenshot
   hover <target>         Move the pointer to a CSS selector or x,y (real events: tooltips and :hover work)
   click <target>         Click a CSS selector or x,y
+  drag <from> <to>       Press at one target, move to the other in small steps, and release
   press <key>            Press a key, such as Escape, Enter, ArrowDown, or a
   type <text>            Insert text at the focus
 
@@ -183,6 +184,18 @@ async function drive(state) {
         if (command === "click") for (const type of ["mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
         return `${command === "click" ? "Clicked" : "Hovering"} at ${Math.round(x)},${Math.round(y)}`;
       }
+      case "drag": {
+        const from = await point(argument), to = await point(rest[1] ?? "");
+        await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
+        await send("Input.dispatchMouseEvent", { type: "mousePressed", x: from.x, y: from.y, button: "left", buttons: 1, clickCount: 1 });
+        const steps = 12;
+        for (let i = 1; i <= steps; i++) {
+          await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x + (to.x - from.x) * i / steps, y: from.y + (to.y - from.y) * i / steps, button: "left", buttons: 1 });
+          await wait(16);
+        }
+        await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: to.x, y: to.y, button: "left", buttons: 0, clickCount: 1 });
+        return `Dragged from ${Math.round(from.x)},${Math.round(from.y)} to ${Math.round(to.x)},${Math.round(to.y)}`;
+      }
       case "press": {
         const code = KEYS[argument] ?? argument.toUpperCase().charCodeAt(0);
         const text = argument.length === 1 ? argument : argument === "Enter" ? "\r" : undefined;
@@ -206,7 +219,7 @@ try {
   } else if (command === "status") {
     const state = await running();
     console.log(state ? `Running (pid ${state.pid}, DevTools port ${state.port}).` : "Not running.");
-  } else if (["reload", "eval", "screenshot", "hover", "click", "press", "type"].includes(command)) {
+  } else if (["reload", "eval", "screenshot", "hover", "click", "drag", "press", "type"].includes(command)) {
     console.log(await drive(await start()));
   } else {
     console.log(USAGE);
