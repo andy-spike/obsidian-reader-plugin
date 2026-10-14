@@ -6,31 +6,29 @@ import { ANNOTATION_FOLDER, AnnotationStore, LEGACY_ANNOTATION_FOLDER } from "./
 import { BookNotes } from "./book-notes";
 import { BookNoteFollowing } from "./book-note-following";
 import { ObsidianBookNoteWorkspace } from "./book-note-workspace";
-import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
+import { ReaderView, READER_VIEW } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
+import { SavedReadingState } from "./reading-state";
 import { stopPdfWorker } from "./pdf-engine";
 import { colorOf, loadSettings, NotePlace, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
 
 export default class ReaderPlugin extends Plugin implements SettingsHost {
+  private saved!: SavedReadingState<ReaderSettings>;
   settings!: ReaderSettings;
   private routing = true;
   private nativeTabs = new WeakMap<WorkspaceLeaf, string>();
   private redirecting = new WeakSet<WorkspaceLeaf>();
   private following!: BookNoteFollowing;
   private store!: AnnotationStore;
-  /** Where each PDF was last read, by vault path, so it reopens there in a new tab or after Obsidian restarts. Oldest first. */
-  private positions = new Map<string, ReadingPosition>();
-  private positionTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Positions recorded here since the last write, kept when another Obsidian changes the data file first. */
-  private unsavedPositions = new Set<string>();
   private settingTab!: ReaderSettingTab;
   private bookNotes!: BookNotes;
   /** Redraws the highlight colors of quotes in book notes. */
   private paintQuotes: (() => void) | null = null;
   async onload(): Promise<void> {
     const data = await this.loadData();
-    this.settings = loadSettings(data);
-    this.positions = loadPositions(data);
+    this.saved = new SavedReadingState(data, { read: () => this.loadData(), write: data => this.saveData(data) }, loadSettings,
+      error => console.error("Reader Plugin: could not save reading state.", error));
+    this.settings = this.saved.settings;
     const store = this.store = new AnnotationStore(this.app.vault.adapter, { folder: this.settings.folder });
     const bookNotes = this.bookNotes = new BookNotes(this.app, store, () => this.settings);
     // Saves made in this window bring the book note up to date; another window's saves are left to that window.
@@ -102,8 +100,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         void this.saveSettings();
       }, openNative: file => void open(file, undefined, true), openNote,
       writing: (record, annotationId) => bookNotes.writing(record, annotationId),
-      lastPosition: path => this.positions.get(path),
-      rememberPosition: (path, position) => this.rememberPosition(path, position),
+      lastPosition: path => this.saved.position(path),
+      rememberPosition: (path, position) => this.saved.remember(path, position),
     }));
     // What you wrote in a book note shows as dots on highlights, so redraw them when it changes.
     // A PDF's first highlight creates its note; the sidebar tab then switches from its placeholder to the note.
@@ -276,8 +274,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       }
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-      const position = this.positions.get(oldPath);
-      if (position && this.positions.delete(oldPath)) this.rememberPosition(file.path, position);
+      this.saved.rename(oldPath, file.path);
       if (file instanceof TFile) bookNotes.renamed(file, oldPath);
       void store.rename(oldPath, file.path).catch(error => new Notice(`Could not update annotation source: ${error.message}`));
     }));
@@ -331,28 +328,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.register(() => { clearTimeout(timer); watcher.close(); });
   }
 
-  /** Settings and reading positions share the plugin's data file. */
-  private async persist(): Promise<void> {
-    clearTimeout(this.positionTimer);
-    this.positionTimer = undefined;
-    this.unsavedPositions.clear();
-    await this.saveData({ ...this.settings, positions: Object.fromEntries(this.positions) });
-  }
-
-  /** Scrolling reports positions continuously, so writes wait until it pauses. */
-  private rememberPosition(path: string, position: ReadingPosition): void {
-    const previous = this.positions.get(path);
-    this.positions.delete(path);
-    this.positions.set(path, position);
-    while (this.positions.size > MAX_POSITIONS) this.positions.delete(this.positions.keys().next().value!);
-    if (previous && previous.page === position.page && previous.offset === position.offset && previous.zoom === position.zoom) return;
-    this.unsavedPositions.add(path);
-    clearTimeout(this.positionTimer);
-    this.positionTimer = setTimeout(() => void this.persist(), 1000);
-  }
-
   async saveSettings(): Promise<void> {
-    await this.persist();
+    await this.saved.flush();
     this.applySettings();
   }
 
@@ -361,15 +338,9 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
    * so this window's next write doesn't put back the old ones. Positions read here but not yet written still win.
    */
   async onExternalSettingsChange(): Promise<void> {
-    const data = await this.loadData();
-    this.settings = loadSettings(data);
+    await this.saved.reload();
+    this.settings = this.saved.settings;
     this.store.folder = this.settings.folder;
-    const positions = loadPositions(data);
-    for (const path of this.unsavedPositions) {
-      const position = this.positions.get(path);
-      if (position) { positions.delete(path); positions.set(path, position); }
-    }
-    this.positions = positions;
     this.applySettings();
     if (this.settingTab.containerEl.isConnected) this.settingTab.display();
   }
@@ -396,7 +367,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         else await this.app.vault.adapter.rename(source, target);
       });
       this.settings.folder = folder;
-      await this.persist();
+      await this.saved.flush();
       // Remove the previous folder only when the disk shows nothing else lives there.
       // Obsidian's non-recursive rmdir fails on empty folders under current Electron, so check first and remove the empty folder.
       const left = await this.app.vault.adapter.list(from).catch(() => null);
@@ -414,29 +385,14 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     // must run even if that fails, or a copy of the plugin stays half-loaded beside the next one.
     try {
       this.readers().forEach(reader => reader.savePosition());
-      if (this.positionTimer !== undefined) void this.persist();
     } catch (error) {
       console.error("Reader Plugin: could not save reading positions while unloading.", error);
     }
+    void this.saved?.close().catch(error => console.error("Reader Plugin: could not save reading state while unloading.", error));
     this.store?.dispose();
     // Open reader and sidebar tabs stay where they are; Obsidian restores them when the plugin loads again, such as after an update or a rebuild.
     stopPdfWorker();
   }
-}
-
-/** Enough for a library; the least recently read books are forgotten first. */
-const MAX_POSITIONS = 200;
-
-function loadPositions(data: unknown): Map<string, ReadingPosition> {
-  const saved = (data as { positions?: unknown } | null)?.positions;
-  const positions = new Map<string, ReadingPosition>();
-  if (!saved || typeof saved !== "object") return positions;
-  for (const [path, value] of Object.entries(saved as Record<string, unknown>)) {
-    const { page, offset, zoom } = (value ?? {}) as Record<string, unknown>;
-    if (typeof page !== "number" || typeof offset !== "number" || !(typeof zoom === "number" || zoom === "width" || zoom === "page")) continue;
-    positions.set(path, { page, offset, zoom });
-  }
-  return positions;
 }
 
 class PdfPicker extends FuzzySuggestModal<TFile> {
