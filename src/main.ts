@@ -35,7 +35,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.registerEvent(this.app.vault.on("modify", file => { if (file instanceof TFile) void bookNotes.changed(file); }));
     this.registerEvent(this.app.vault.on("delete", file => bookNotes.deleted(file.path)));
     this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => { if (info.file) bookNotes.edited(info.file.path, () => editor.getValue()); }));
-    const refreshSidebar = () => this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
+    // A sidebar not shown since Obsidian started is a placeholder; it draws itself when it loads.
+    const refreshSidebar = () => this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => { if (leaf.view instanceof AnnotationsView) leaf.view.refresh(); });
     let sidebarOpening: Promise<void> | null = null;
     const showAnnotations = (): Promise<void> => {
       if (sidebarOpening) return sidebarOpening;
@@ -189,15 +190,42 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     // A passage link opens its highlight, and a rendered link to a PDF, such as `[[book.pdf#page=2]]`, opens in the Reader at its page,
     // reusing a Reader that already shows the PDF. Left to Obsidian, it would replace the note's tab with the native viewer, and the page would be lost
     // when routing swaps in the Reader. Capturing at the document runs before Obsidian's own link handler.
+    /**
+     * The passage address under the pointer: a rendered link's address, or, where the editor shows a link as raw text (as it
+     * does for the block holding the cursor), the passage link at that spot of the line.
+     */
+    const passageAt = (target: Element | null): string | null => {
+      const rendered = target?.closest?.("a[href^='obsidian://reader-plugin?']");
+      if (rendered) return rendered.getAttribute("href");
+      if (!target?.closest?.(".cm-link, .cm-url")) return null;
+      const view = this.app.workspace.getLeavesOfType("markdown").map(leaf => leaf.view).find((view): view is MarkdownView => view instanceof MarkdownView && view.contentEl.contains(target));
+      // Obsidian's editor is CodeMirror, which finds the text position of an element on screen.
+      const cm = (view?.editor as { cm?: { posAtDOM(node: Node): number } } | undefined)?.cm;
+      if (!view || !cm) return null;
+      const at = view.editor.offsetToPos(cm.posAtDOM(target));
+      for (const match of view.editor.getLine(at.line).matchAll(/\[[^\]]*\]\((obsidian:\/\/reader-plugin\?[^)\s]+)\)/g)) {
+        if (at.ch >= match.index && at.ch <= match.index + match[0].length) return match[1]!;
+      }
+      return null;
+    };
+    // A passage link opens on press, before the editor moves its cursor into the block and redraws the link as raw text, which
+    // Obsidian would then try to open as an empty address. Opening here also avoids handing the obsidian:// address to the
+    // operating system, which may not send it back to this Obsidian.
+    const openPassageLink = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      const href = passageAt(event.target as Element | null);
+      if (!href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void openPassage(Object.fromEntries(new URL(href).searchParams));
+    };
     const openPdfLink = (event: MouseEvent) => {
       if (event.button !== 0) return;
       const target = event.target as Element | null;
-      // A passage link is opened here rather than handed to the operating system, which may not send it back to this Obsidian.
-      const passage = target?.closest?.("a[href^='obsidian://reader-plugin?']");
-      if (passage) {
+      // The press already opened it; keep Obsidian from following the link as well.
+      if (passageAt(target)) {
         event.preventDefault();
         event.stopPropagation();
-        void openPassage(Object.fromEntries(new URL(passage.getAttribute("href")!).searchParams));
         return;
       }
       if (!this.routing) return;
@@ -211,8 +239,12 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       event.stopPropagation();
       void open(file, Number(/(?:^|&)page=(\d+)/.exec(subpath)?.[1]) || undefined);
     };
-    this.registerDomEvent(document, "click", openPdfLink, { capture: true });
-    this.registerEvent(this.app.workspace.on("window-open", win => this.registerDomEvent(win.doc, "click", openPdfLink, { capture: true })));
+    const listen = (doc: Document) => {
+      this.registerDomEvent(doc, "mousedown", openPassageLink, { capture: true });
+      this.registerDomEvent(doc, "click", openPdfLink, { capture: true });
+    };
+    listen(document);
+    this.registerEvent(this.app.workspace.on("window-open", win => listen(win.doc)));
     // The note command keeps its old ID, so hotkeys set for "Highlight selected PDF passage with comment" still work.
     for (const withNote of [false, true]) this.addCommand({
       id: withNote ? "highlight-with-comment" : "highlight-selection",
@@ -350,7 +382,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
 
   private applySettings(): void {
     this.readers().forEach(reader => reader.refreshSettings());
-    this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
+    this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => { if (leaf.view instanceof AnnotationsView) leaf.view.refresh(); });
   }
 
   /** Moves existing records with the file manager, so links to Markdown files that older versions generated follow them. */
