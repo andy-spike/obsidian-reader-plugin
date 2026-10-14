@@ -13,18 +13,17 @@ after(() => rm(directory, { recursive: true, force: true }));
 const input = (id, page, quote = `Quote ${id}`) => ({ documentId: "doc-1", annotationId: id, page, quote });
 const header = note.defaultNoteHeader("[[Books/Book.pdf]]");
 
-test("a section has the quote, both links, and a block ID", () => {
-  const text = note.insertSection(header, input("a1", 34, "First line\nsecond line"), null);
+test("a section has the quote as one flowing line, the passage link, and a block ID", () => {
+  const text = note.insertSection(header, input("a1", 34, "First line of a hyphen-\nated quote,\n  self-\nAware"), null);
   assert.equal(text, `${header}
 > [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=doc-1&annotation=a1&page=34)
-> First line
-> second line
+> First line of a hyphen-ated quote, self- Aware
 
 ^a1
 `);
   const [section] = note.findSections(text);
   assert.equal(section.id, "a1");
-  assert.equal(section.quote, "First line\nsecond line");
+  assert.equal(section.quote, "First line of a hyphen-ated quote, self- Aware");
   assert.equal(section.writing, "");
 });
 
@@ -100,7 +99,7 @@ test("a section's quote reads back as written, so an edit to it can be noticed",
   const text = note.insertSection(header, input("a1", 1, quote), null);
   const section = note.findSections(text)[0];
   assert.equal(note.quoteText(section.quote), note.quoteText(quote));
-  const edited = note.findSections(text.replace("> second line", "> second line, my edit"))[0];
+  const edited = note.findSections(text.replace("second line", "second line, my edit"))[0];
   assert.notEqual(note.quoteText(edited.quote), note.quoteText(quote));
 });
 
@@ -121,4 +120,62 @@ test("the PDF link of earlier sections is removed, and nothing else", () => {
   assert.match(text, /&page=3\)\n> quoted/);
   assert.match(text, /My link \[\[Books\/Book.pdf#page=3\|PDF\]\]/);
   assert.equal(note.dropPdfLinks(text), text);
+});
+
+test("consecutive sections are separated, and separators stay out of the writing", () => {
+  let text = note.insertSection(header, input("a1", 1), null);
+  text = note.insertSection(text, input("a3", 3), null);
+  text = note.insertSection(text, input("a2", 2), note.findSections(text)[1]);
+  text = note.insertSection(text, input("a0", 0), note.findSections(text)[0]);
+  assert.equal(text.match(/^---$/gm).length - 2, 3);
+  assert.deepEqual(note.findSections(text).map(section => [section.id, section.separator >= 0, section.writing]), [["a0", false, ""], ["a1", true, ""], ["a2", true, ""], ["a3", true, ""]]);
+  text = note.appendWriting(text, note.findSections(text)[1], "About a1");
+  assert.match(text, /About a1\n\n---\n\n> \[!quote\] p\. 2/);
+  assert.equal(note.findSections(text)[1].writing, "About a1");
+  assert.ok(!/\n\n\n/.test(text));
+});
+
+test("removing a section takes one separator with it", () => {
+  let text = note.insertSection(header, input("a1", 1), null);
+  text = note.insertSection(text, input("a2", 2), null);
+  text = note.insertSection(text, input("a3", 3), null);
+  const separators = t => t.match(/^---$/gm).length - 2;
+  const without = id => note.removeSection(text, note.findSections(text).find(section => section.id === id));
+  for (const id of ["a1", "a2", "a3"]) {
+    const after = without(id);
+    assert.equal(separators(after), 1, id);
+    assert.equal(note.findSections(after)[0].separator, -1, id);
+    assert.ok(!/\n\n\n/.test(after), id);
+  }
+});
+
+test("a heading between sections replaces the separator, and older notes get separators and flowing quotes", () => {
+  const old = `${header}
+> [!quote] p. 1 · [Open passage](obsidian://reader-plugin?document=d&annotation=a1&page=1)
+> Old first
+> line
+
+^a1
+
+Mine.
+> [!quote] p. 2 · [Open passage](obsidian://reader-plugin?document=d&annotation=a2&page=2)
+> Edited by me
+> on purpose
+
+^a2
+
+## Chapter 2
+
+> [!quote] p. 9 · [Open passage](obsidian://reader-plugin?document=d&annotation=a3&page=9)
+> Third
+
+^a3
+`;
+  const text = note.addSeparators(note.flowQuotes(old, new Map([["a1", "Old first\nline"], ["a2", "Original quote"], ["a3", "Third"]])));
+  assert.match(text, /> Old first line\n/);
+  assert.match(text, /> Edited by me\n> on purpose/);
+  assert.match(text, /Mine\.\n\n---\n\n> \[!quote\] p\. 2/);
+  assert.match(text, /## Chapter 2\n\n> \[!quote\] p\. 9/);
+  assert.equal(text.match(/^---$/gm).length - 2, 1);
+  assert.equal(note.addSeparators(text), text);
 });

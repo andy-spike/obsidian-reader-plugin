@@ -1,6 +1,6 @@
 import { App, MarkdownView, normalizePath, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type { Annotation, AnnotationRecord, AnnotationStore } from "./annotations";
-import { defaultNoteHeader, dropPdfLinks, fillTemplate, findSections, insertSection, noteFileName, placeComments, placedComments, quoteText, removeSection, type MovedComment, type SectionInput } from "./book-note";
+import { addSeparators, defaultNoteHeader, dropPdfLinks, fillTemplate, flowQuotes, findSections, insertSection, noteFileName, placeComments, placedComments, quoteText, removeSection, type MovedComment, type SectionInput } from "./book-note";
 import type { ReaderSettings } from "./settings";
 
 const localDate = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; };
@@ -171,7 +171,8 @@ export class BookNotes {
    * is written under it and its quote is unchanged; sections of highlights this window never saw are left alone.
    */
   private reconcile(text: string, record: AnnotationRecord): string {
-    text = dropPdfLinks(text);
+    // Notes written by earlier versions get the current format: no PDF link, flowing quotes, and separators.
+    text = addSeparators(flowQuotes(dropPdfLinks(text), new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]))));
     const ids = new Set(record.annotations.map(annotation => annotation.id));
     const known = this.quotes.get(record.documentId);
     for (const section of findSections(text).reverse()) {
