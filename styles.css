@@ -78,6 +78,9 @@ textarea.reader-comment-editor { display: block; box-sizing: border-box; resize:
 .reader-color-setting .setting-item-info { display: none; }
 .reader-color-setting .setting-item-control { justify-content: flex-start; }
 .reader-color-setting input[type="text"] { flex: 1; }
+/* Obsidian marks disabled extra buttons but draws them like active ones. The trash button keeps its tooltip, which says why it is disabled. */
+.reader-color-setting .extra-setting-button.is-disabled { opacity: 0.35; cursor: default; }
+.reader-color-setting .extra-setting-button.is-disabled:hover { background: transparent; }
 /* Table of contents: Obsidian's tree rows in a tall dialog, with the list scrolling under the search field. */
 /* The dialog fits its rows up to a limit, then the list scrolls. Obsidian centers it in the window. */
 .reader-outline-modal { display: flex; flex-direction: column; width: min(640px, 92vw); height: auto; max-height: min(720px, 80vh); }
