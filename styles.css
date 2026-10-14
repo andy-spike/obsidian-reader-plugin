@@ -40,6 +40,9 @@
 button.reader-swatch { width: 20px; height: 20px; min-width: 20px; padding: 0; border: 0; border-radius: 50%; background: var(--reader-color); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15); cursor: pointer; transition: transform 100ms ease; }
 button.reader-swatch:hover { background: var(--reader-color); transform: scale(1.15); }
 button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15), 0 0 0 2px var(--background-primary), 0 0 0 4px var(--text-muted); }
+.reader-view button.reader-text-button { display: flex; align-items: center; gap: var(--size-2-2); padding: var(--size-2-2) var(--size-4-2) var(--size-2-2) var(--size-2-3); color: var(--text-muted); font-size: var(--font-ui-small); }
+.reader-view button.reader-text-button:hover { color: var(--text-normal); }
+.reader-text-button-icon { display: flex; }
 .reader-popup .reader-comment-editor { margin: 0 2px; width: auto; }
 /* Comment fields grow with their text up to a limit, then scroll. They never show a resize handle. */
 textarea.reader-comment-editor { display: block; box-sizing: border-box; resize: none; field-sizing: content; min-height: calc(3lh + 14px); max-height: calc(10lh + 14px); overflow-y: auto; padding: 6px 8px; font-size: var(--font-ui-small); line-height: 1.5; }
@@ -87,5 +90,7 @@ textarea.reader-comment-editor { display: block; box-sizing: border-box; resize:
 .reader-page .textLayer span[role="img"] { user-select: none; cursor: default; }
 .reader-page .textLayer ::selection { background: color-mix(in srgb, var(--interactive-accent) 32%, transparent); color: transparent; }
 .reader-page .textLayer br::selection { background: transparent; }
+/* While a swatch in the selection popup is hovered or focused, the selection shows that highlight color at the same strength as a saved highlight. */
+.reader-pages.is-previewing .textLayer ::selection { background: color-mix(in srgb, var(--reader-preview) 50%, transparent); }
 .reader-page .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
 .reader-page .textLayer.selecting .endOfContent { top: 0; }

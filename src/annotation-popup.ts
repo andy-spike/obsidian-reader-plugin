@@ -10,7 +10,8 @@ type PopupCard = ReturnType<typeof mount<Record<string, never>, {
   clear(): void;
 }>>;
 
-export interface SelectionActions { highlight(color: string): void; comment(): void; copy(): void }
+/** `preview` tints the selection in a color while its swatch is hovered or focused, and clears it with null. */
+export interface SelectionActions { highlight(color: string): void; comment(): void; copy(): void; preview(color: string | null): void }
 export interface AnnotationActions { recolor(color: string): void; comment(text: string): void; copy(): void; remove(): void }
 /** Horizontal position and the vertical span the card should not cover, in viewport coordinates. */
 export interface PopupAnchor { clientX: number; top: number; bottom: number; above: boolean }
@@ -24,7 +25,7 @@ export class AnnotationPopup {
   private card: PopupCard;
   private observer: ResizeObserver;
 
-  constructor(private host: HTMLElement, private viewport: HTMLElement, private reserveBottom: number) {
+  constructor(private host: HTMLElement, private viewport: HTMLElement, private reserveBottom: number, private onHide: () => void = () => {}) {
     this.el = host.createDiv({ cls: "reader-popup", attr: { role: "dialog", "aria-label": "Annotate passage" } });
     this.el.hidden = true;
     this.card = mount(Card, { target: this.el });
@@ -73,6 +74,7 @@ export class AnnotationPopup {
     this.annotation = null;
     this.card.clear();
     flushSync();
+    this.onHide();
   }
 
   private show(at: PopupAnchor): void {

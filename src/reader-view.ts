@@ -117,7 +117,7 @@ export class ReaderView extends FileView {
     this.message = this.stage.createDiv({ cls: "reader-message" });
     this.hint = contentEl.createDiv({ cls: "reader-hint", text: "This PDF has no selectable text. Run OCR on it to highlight passages." });
     this.hint.hide();
-    this.popup = new AnnotationPopup(this.pages, this.stage, CONTROLS_CLEARANCE);
+    this.popup = new AnnotationPopup(this.pages, this.stage, CONTROLS_CLEARANCE, () => this.previewColor(null));
     this.register(() => this.popup.destroy());
     this.buildControls();
 
@@ -603,8 +603,15 @@ export class ReaderView extends FileView {
       }
     });
     this.registerDomEvent(doc, "keydown", event => {
-      if (event.key !== "Escape" || !this.popup.open || this.app.workspace.getActiveViewOfType(ReaderView) !== this) return;
-      this.dismissPopup();
+      if (!this.popup.open || this.app.workspace.getActiveViewOfType(ReaderView) !== this) return;
+      if (event.key === "Escape") this.dismissPopup();
+      // Number keys pick a color from the selection popup, matching the order shown in its tooltips.
+      else if (this.popup.mode === "selection" && /^[1-9]$/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && !(event.target as HTMLElement).closest?.("input, textarea, [contenteditable]")) {
+        const color = this.host.settings().colors[Number(event.key) - 1];
+        if (!color) return;
+        event.preventDefault();
+        this.createHighlights(color.id, false, { clientX: 0, top: 0, bottom: 0, above: false });
+      }
     });
     let hoverFrame = 0;
     this.registerDomEvent(this.stage, "pointermove", event => {
@@ -691,7 +698,14 @@ export class ReaderView extends FileView {
       highlight: color => this.createHighlights(color, false, at),
       comment: () => this.createHighlights(this.lastColor, true, at),
       copy: () => this.copy(this.passages.map(p => p.quote.exact).join(" ")),
+      preview: color => this.previewColor(color),
     });
+  }
+
+  private previewColor(id: string | null): void {
+    const color = id ? this.host.settings().colors.find(option => option.id === id) : null;
+    this.pages.toggleClass("is-previewing", !!color);
+    if (color) this.pages.style.setProperty("--reader-preview", color.value);
   }
 
   private showAnnotationPopup(annotation: Annotation, at: PopupAnchor, focusComment: boolean): void {
