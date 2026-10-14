@@ -15,8 +15,8 @@ Read the [PDF reader guide](docs/pdf-reader.md) for details.
 
 ## Roadmap
 
-- EPUB support. Pending.
-- An AI reading assistant that answers questions about your books. Pending. You can use it with an API key or an existing subscription.
+- [ ] EPUB support. Pending.
+- [ ] An AI reading assistant that answers questions about your books. Pending. You can use it with an API key or an existing subscription.
 
 ## Development
 
