@@ -98,6 +98,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       const leaf = this.app.workspace.getLeaf("tab");
       if (native) this.nativeTabs.set(leaf, file.path);
       await leaf.setViewState({ type: native ? "pdf" : READER_VIEW, state: native || !page ? { file: file.path } : { file: file.path, page } });
+      if (native) leaf.view.containerEl.addClass("reader-native-pdf");
       await this.app.workspace.revealLeaf(leaf);
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
       return leaf.view instanceof ReaderView ? leaf.view : null;
@@ -153,18 +154,25 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       for (const leaf of this.app.workspace.getLeavesOfType("pdf")) {
         const state = leaf.getViewState().state;
         const path = state?.file;
-        if (typeof path !== "string" || this.nativeTabs.get(leaf) === path || this.redirecting.has(leaf)) continue;
+        if (typeof path !== "string" || this.redirecting.has(leaf)) continue;
+        // Obsidian's viewer stays hidden in tabs about to move to Reader; a tab meant to show it is marked.
+        if (this.nativeTabs.get(leaf) === path) { leaf.view.containerEl.addClass("reader-native-pdf"); continue; }
         this.nativeTabs.delete(leaf);
         this.redirecting.add(leaf);
         void leaf.setViewState({ type: READER_VIEW, state: { file: path } })
-          .catch(error => new Notice(`Could not open Reader: ${String(error)}`))
+          .catch(error => {
+            // Show Obsidian's viewer rather than an empty tab.
+            leaf.view.containerEl.addClass("reader-native-pdf");
+            new Notice(`Could not open Reader: ${String(error)}`);
+          })
           .finally(() => this.redirecting.delete(leaf));
       }
     };
     let routeTimer: ReturnType<typeof setTimeout> | undefined;
+    // Events often come in bursts; one pass right after them is enough, and soon enough that Obsidian's viewer does little work first.
     const routePdfs = () => {
       clearTimeout(routeTimer);
-      routeTimer = setTimeout(routeNow, 100);
+      routeTimer = setTimeout(routeNow, 0);
     };
     this.register(() => clearTimeout(routeTimer));
     // PDF is reserved by Obsidian. Route file tabs via public workspace events instead of patching its viewer or registry.

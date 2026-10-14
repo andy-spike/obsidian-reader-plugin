@@ -60,6 +60,8 @@ export interface ReaderHost {
   rememberPosition(path: string, position: ReadingPosition): void;
 }
 
+const titleOf = (path: unknown): string => typeof path === "string" ? path.split("/").pop()!.replace(/\.pdf$/i, "") : "";
+
 export class ReaderView extends FileView {
   private pdf: PDFDocumentProxy | null = null;
   private loading: PDFDocumentLoadingTask | null = null;
@@ -84,6 +86,9 @@ export class ReaderView extends FileView {
   private stage!: HTMLElement;
   private pages!: HTMLElement;
   private message!: HTMLElement;
+  /** While a PDF opens, its pages and controls stay invisible until the pages in view are drawn, so they appear at once. */
+  private openingTimer: number | undefined;
+  private messageTimer: number | undefined;
   private hint!: HTMLElement;
   private toastEl: HTMLElement | null = null;
   private toastTimer: number | undefined;
@@ -92,9 +97,15 @@ export class ReaderView extends FileView {
   private modeAction!: HTMLElement;
   private popup!: AnnotationPopup;
 
-  constructor(leaf: WorkspaceLeaf, private host: ReaderHost) { super(leaf); }
+  /** The file name to show until the PDF has loaded, so the tab title doesn't change while it opens. */
+  private pendingTitle: string;
+  constructor(leaf: WorkspaceLeaf, private host: ReaderHost) {
+    super(leaf);
+    // A tab moved here from Obsidian's PDF viewer still shows that file while this view is created.
+    this.pendingTitle = titleOf(leaf.getViewState().state?.file);
+  }
   getViewType(): string { return READER_VIEW; }
-  getDisplayText(): string { return this.file?.basename ?? "PDF Reader"; }
+  getDisplayText(): string { return this.file?.basename ?? this.pendingTitle; }
   getIcon(): string { return "book-open"; }
   canAcceptExtension(extension: string): boolean { return extension === "pdf"; }
   getRecord(): AnnotationRecord | null { return this.record; }
@@ -108,6 +119,7 @@ export class ReaderView extends FileView {
   }
 
   async setState(state: Record<string, unknown>, result: ViewStateResult): Promise<void> {
+    this.pendingTitle = titleOf(state.file) || this.pendingTitle;
     const page = typeof state.page === "number" ? state.page : undefined;
     const offset = typeof state.offset === "number" ? state.offset : undefined;
     this.restore = page !== undefined || state.zoom !== undefined ? { page, offset, zoom: state.zoom } : null;
@@ -168,6 +180,8 @@ export class ReaderView extends FileView {
     this.register(() => observer.disconnect());
     this.register(() => {
       window.clearTimeout(this.settleTimer);
+      window.clearTimeout(this.openingTimer);
+      window.clearTimeout(this.messageTimer);
       window.clearTimeout(this.toastTimer);
       if (this.frame) cancelAnimationFrame(this.frame);
     });
@@ -210,7 +224,10 @@ export class ReaderView extends FileView {
   async onLoadFile(file: TFile): Promise<void> {
     await this.disposePdf();
     const generation = ++this.generation;
-    this.showMessage("Opening PDF…");
+    this.contentEl.addClass("is-opening");
+    // Most PDFs open quickly; the message only appears for slow ones, so it doesn't flash.
+    window.clearTimeout(this.messageTimer);
+    this.messageTimer = window.setTimeout(() => { if (generation === this.generation && !this.pdf) this.showMessage("Opening PDF…"); }, 600);
     try {
       const data = await this.app.vault.readBinary(file);
       if (generation !== this.generation) return;
@@ -221,7 +238,11 @@ export class ReaderView extends FileView {
       const first = await pdf.getPage(1);
       if (generation !== this.generation) return;
       this.pdf = pdf;
+      window.clearTimeout(this.messageTimer);
       this.message.hide();
+      // Shown anyway if drawing takes long, such as for a heavy first page.
+      window.clearTimeout(this.openingTimer);
+      this.openingTimer = window.setTimeout(() => this.reveal(), 1500);
       this.buildPages(first);
       this.ready();
       // A tab restored by Obsidian carries its own position. A newly opened tab continues where this PDF was last read.
@@ -231,6 +252,8 @@ export class ReaderView extends FileView {
       void pdf.getOutline().then(outline => { if (generation === this.generation) this.outlineAction.toggle(!!outline?.length); }).catch(() => {});
     } catch (error) {
       if (generation !== this.generation) return;
+      window.clearTimeout(this.messageTimer);
+      this.reveal();
       this.showMessage(`Could not open this PDF. ${error instanceof Error ? error.message : String(error)}`, true);
     }
   }
@@ -245,6 +268,19 @@ export class ReaderView extends FileView {
   }
 
   private ready(): void { this.host.ready(this); }
+
+  private reveal(): void {
+    window.clearTimeout(this.openingTimer);
+    this.contentEl.removeClass("is-opening");
+  }
+
+  /** Ends the opening state once every page in view has been drawn at the position the PDF opens at. */
+  private revealIfDrawn(): void {
+    if (!this.contentEl.hasClass("is-opening") || this.restore || !this.stage.clientHeight) return;
+    const top = this.stage.scrollTop, bottom = top + this.stage.clientHeight;
+    const inView = this.slots.slice(this.slotAt(top), this.slotAt(bottom) + 1);
+    if (inView.every(slot => slot.canvas && slot.renderedZoom === this.zoom)) this.reveal();
+  }
 
   private showMessage(text: string, error = false): void {
     this.message.empty();
@@ -475,6 +511,7 @@ export class ReaderView extends FileView {
       slot.el.prepend(canvas);
       slot.canvas = canvas;
       slot.renderedZoom = zoom;
+      this.revealIfDrawn();
       if (slot.text) slot.text.layer.update({ viewport });
       else {
         const content = await page.getTextContent();

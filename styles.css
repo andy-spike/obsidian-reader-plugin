@@ -1,6 +1,12 @@
 /* ---- Reader layout ---- */
 .reader-view { position: relative; display: flex; flex-direction: column; padding: 0 !important; overflow: hidden; }
 .reader-stage { position: relative; flex: 1; min-height: 0; overflow: auto; outline: none; background: var(--background-secondary); scrollbar-gutter: stable; }
+/* While a PDF opens, pages and controls wait until the pages in view are drawn, then appear together. */
+.reader-pages, .reader-controls { transition: opacity 120ms ease-out; }
+.reader-view.is-opening .reader-pages, .reader-view.is-opening .reader-controls { opacity: 0; transition: none; }
+/* A PDF opened from the file list starts in Obsidian's viewer and moves to Reader right away; its page isn't shown meanwhile.
+   Tabs deliberately opened in Obsidian's viewer are marked and show normally. */
+.workspace-leaf-content[data-type="pdf"]:not(.reader-native-pdf) > .view-content { visibility: hidden; }
 .reader-pages { position: relative; display: flex; flex-direction: column; align-items: center; gap: 16px; box-sizing: border-box; width: max-content; min-width: 100%; padding: 24px 24px 96px; }
 .reader-page { position: relative; flex: none; background: white; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 10px rgb(0 0 0 / 0.1); contain: layout paint; }
 .reader-page > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
