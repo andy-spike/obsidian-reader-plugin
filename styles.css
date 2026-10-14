@@ -64,8 +64,8 @@ textarea.reader-comment-editor { display: block; box-sizing: border-box; resize:
 .reader-entry-comment:hover { color: var(--text-normal); }
 .reader-entry-comment:focus-visible { box-shadow: 0 0 0 2px var(--background-modifier-border-focus); outline: none; }
 .reader-entry .reader-comment-editor { width: 100%; margin-top: var(--size-4-2); max-height: calc(14lh + 14px); }
-/* Actions float on the card's top edge so hovering never reflows the list. */
-.reader-entry-actions { position: absolute; top: -13px; right: var(--size-4-2); z-index: 2; display: flex; padding: 2px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); box-shadow: var(--shadow-s); opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; --icon-size: var(--icon-xs); }
+/* Actions float on the card's top edge so hovering never reflows the list. They layer above the sticky page heading, which covers the first card's edge. */
+.reader-entry-actions { position: absolute; top: -13px; right: var(--size-4-2); z-index: 4; display: flex; padding: 2px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); box-shadow: var(--shadow-s); opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; --icon-size: var(--icon-xs); }
 .reader-entry:hover .reader-entry-actions, .reader-entry:focus-within .reader-entry-actions { opacity: 1; pointer-events: auto; }
 .reader-entry-actions button:last-child:hover { color: var(--text-error); }
 .reader-entry-swatch { display: block; width: 12px; height: 12px; border-radius: 50%; background: var(--reader-color); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15); }
