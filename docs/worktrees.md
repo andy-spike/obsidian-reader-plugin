@@ -13,7 +13,9 @@ A terminal `cd` or a shell-created worktree does not change T3's binding, so alw
 
 ## Setup
 
-T3's saved **Worktree setup** project script is `pnpm worktree:setup`, with **Run on worktree create** enabled and background execution disabled. It runs `pnpm install --frozen-lockfile` and `pnpm build`. The build generates `main.js` and a fresh development vault for that checkout. Rerunning setup is safe; it preserves existing vault notes and settings. Keep private books and CLI credentials outside the repository.
+T3's saved **Worktree setup** project script is `pnpm worktree:setup`, with **Run on worktree create** enabled and background execution disabled. It runs `pnpm install --frozen-lockfile` and `pnpm build`. The build generates `main.js` and a fresh development vault for that checkout. Rerunning setup is safe; it preserves existing vault notes and settings. Setup copies `AI Engineering.pdf` from the main checkout's development vault into the new vault without replacing an existing copy. Keep the source PDF in `.dev-vault/Reader Plugin Dev - <main-checkout-directory>/Books/AI Engineering.pdf`; it remains ignored by Git. Missing PDFs produce a warning and do not block setup. Keep CLI credentials outside the repository.
+
+Run `npm run dev:open` from a worktree to open its own vault, then `pnpm dev` to rebuild into it as you edit. Vault data stays local to the checkout and does not merge. Commit source changes and reusable fixture definitions, then merge those commits when requested. Retain the worktree to preserve its books and annotations.
 
 ## Finishing a task
 
