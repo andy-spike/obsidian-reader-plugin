@@ -1,10 +1,12 @@
-import { App, FileView, Menu, Notice, setTooltip, SuggestModal, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { App, FileView, Menu, Notice, SuggestModal, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { randomUUID } from "node:crypto";
 import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, ReaderSettings } from "./settings";
-import { deleteAnnotation, iconButton } from "./ui";
+import { deleteAnnotation } from "./ui";
+import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
+import { mount, unmount } from "svelte";
 
 export const READER_VIEW = "reader-plugin-pdf";
 /** PDF points to CSS pixels, so 100% matches the printed page size like other PDF viewers. */
@@ -68,14 +70,7 @@ export class ReaderView extends FileView {
   private pages!: HTMLElement;
   private message!: HTMLElement;
   private hint!: HTMLElement;
-  private pageInput!: HTMLInputElement;
-  private pageTotal!: HTMLElement;
-  private previous!: HTMLButtonElement;
-  private next!: HTMLButtonElement;
-  private zoomLevel!: HTMLButtonElement;
-  private zoomOutButton!: HTMLButtonElement;
-  private zoomInButton!: HTMLButtonElement;
-  private resetButton!: HTMLButtonElement;
+  private controls!: ReturnType<typeof mount<Record<string, unknown>, { update(state: ControlsState): void }>>;
   private outlineAction!: HTMLElement;
   private popup!: AnnotationPopup;
 
@@ -153,36 +148,24 @@ export class ReaderView extends FileView {
   }
 
   private buildControls(): void {
-    const controls = this.contentEl.createDiv({ cls: "reader-controls", attr: { role: "toolbar", "aria-label": "Page and zoom" } });
-    this.previous = iconButton(controls, "chevron-up", "Previous page", () => this.step(-1), "top");
-    this.pageInput = controls.createEl("input", { cls: "reader-page-input", attr: { type: "text", inputmode: "numeric", "aria-label": "Page number" } });
-    this.pageTotal = controls.createSpan({ cls: "reader-page-total" });
-    this.next = iconButton(controls, "chevron-down", "Next page", () => this.step(1), "top");
-    this.pageInput.addEventListener("focus", () => this.pageInput.select());
-    this.pageInput.addEventListener("keydown", event => {
-      if (event.key === "Enter") {
-        const page = Number.parseInt(this.pageInput.value, 10);
-        if (Number.isFinite(page)) this.goToPage(page);
-        this.stage.focus({ preventScroll: true });
-      } else if (event.key === "Escape") this.stage.focus({ preventScroll: true });
-    });
-    this.pageInput.addEventListener("blur", () => { this.pageInput.value = String(this.page); });
-    controls.createDiv({ cls: "reader-controls-divider" });
-    this.zoomOutButton = iconButton(controls, "minus", "Zoom out", () => this.zoomBy(-1), "top");
-    this.zoomLevel = controls.createEl("button", { cls: "reader-zoom-level", attr: { type: "button" } });
-    setTooltip(this.zoomLevel, "Zoom options", { placement: "top" });
-    this.zoomLevel.addEventListener("click", () => {
-      const menu = new Menu();
-      const option = (title: string, checked: boolean, choose: () => void) => menu.addItem(item => item.setTitle(title).setChecked(checked).onClick(choose));
-      option("Fit width", this.fit === "width", () => this.setZoom(this.fitZoom("width"), "width"));
-      option("Fit page", this.fit === "page", () => this.setZoom(this.fitZoom("page"), "page"));
-      menu.addSeparator();
-      for (const zoom of ZOOM_PRESETS) option(`${Math.round(zoom * 100)}%`, !this.fit && Math.abs(this.zoom - zoom) < 0.005, () => this.setZoom(zoom, null));
-      const rect = this.zoomLevel.getBoundingClientRect();
-      menu.showAtPosition({ x: rect.left, y: rect.top, width: rect.width, left: true });
-    });
-    this.zoomInButton = iconButton(controls, "plus", "Zoom in", () => this.zoomBy(1), "top");
-    this.resetButton = iconButton(controls, "rotate-ccw", "Reset zoom (fit width)", () => this.resetZoom(), "top");
+    const toStage = () => this.stage.focus({ preventScroll: true });
+    this.controls = mount(ReaderControls, { target: this.contentEl, props: {
+      step: delta => this.step(delta),
+      goToPage: page => this.goToPage(page),
+      done: toStage,
+      zoomBy: direction => this.zoomBy(direction),
+      reset: () => this.resetZoom(),
+      zoomMenu: rect => {
+        const menu = new Menu();
+        const option = (title: string, checked: boolean, choose: () => void) => menu.addItem(item => item.setTitle(title).setChecked(checked).onClick(choose));
+        option("Fit width", this.fit === "width", () => this.setZoom(this.fitZoom("width"), "width"));
+        option("Fit page", this.fit === "page", () => this.setZoom(this.fitZoom("page"), "page"));
+        menu.addSeparator();
+        for (const zoom of ZOOM_PRESETS) option(`${Math.round(zoom * 100)}%`, !this.fit && Math.abs(this.zoom - zoom) < 0.005, () => this.setZoom(zoom, null));
+        menu.showAtPosition({ x: rect.left, y: rect.top, width: rect.width, left: true });
+      },
+    } });
+    this.register(() => void unmount(this.controls));
     this.updateControls();
   }
 
@@ -321,23 +304,17 @@ export class ReaderView extends FileView {
   }
 
   private setCurrentPage(page: number): void {
-    if (page === this.page && this.pageInput.value) return;
+    if (page === this.page && this.slots.length) return;
     this.page = page;
     this.updateControls();
     this.app.workspace.requestSaveLayout();
   }
 
   private updateControls(): void {
-    const total = this.slots.length;
-    if (this.pageInput.ownerDocument.activeElement !== this.pageInput) this.pageInput.value = total ? String(this.page) : "";
-    this.pageInput.style.width = `${Math.max(2, String(total).length) + 1.5}ch`;
-    this.pageTotal.setText(total ? `/ ${total}` : "");
-    this.previous.disabled = !total || (this.page <= 1 && (this.stage?.scrollTop ?? 0) <= 8);
-    this.next.disabled = !total || this.page >= total;
-    this.zoomLevel.setText(`${Math.round(this.zoom * 100)}%`);
-    this.zoomOutButton.disabled = this.zoom <= MIN_ZOOM;
-    this.zoomInButton.disabled = this.zoom >= MAX_ZOOM;
-    this.resetButton.disabled = this.fit === "width";
+    this.controls?.update({
+      page: this.page, total: this.slots.length, atStart: this.page <= 1 && (this.stage?.scrollTop ?? 0) <= 8,
+      zoom: this.zoom, canZoomOut: this.zoom > MIN_ZOOM, canZoomIn: this.zoom < MAX_ZOOM, fitWidth: this.fit === "width",
+    });
   }
 
   // ---- Zoom ----
@@ -407,7 +384,7 @@ export class ReaderView extends FileView {
     if (!height) return;
     this.position = this.measurePosition();
     this.setCurrentPage(this.slots[this.slotAt(top + height * 0.3)]!.number);
-    this.previous.disabled = this.page <= 1 && top <= 8;
+    this.updateControls();
     const first = this.slotAt(top - height), last = this.slotAt(top + height * 2);
     for (const slot of [...this.active]) if (slot.number - 1 < first - 2 || slot.number - 1 > last + 2) this.releasePage(slot);
     const visible = this.slotAt(top);

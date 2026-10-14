@@ -1,22 +1,6 @@
-import { Menu, Notice, setIcon, setTooltip } from "obsidian";
+import { Menu, Notice } from "obsidian";
 import { Annotation, AnnotationRecord, AnnotationStore } from "./annotations";
 import { HighlightColor } from "./settings";
-
-export function iconButton(parent: HTMLElement, icon: string, label: string, action: (event: MouseEvent) => void, placement: "top" | "bottom" = "bottom"): HTMLButtonElement {
-  const button = parent.createEl("button", { cls: "clickable-icon reader-icon-button", attr: { type: "button" } });
-  setIcon(button, icon);
-  setTooltip(button, label, { placement });
-  button.addEventListener("click", action);
-  return button;
-}
-
-export function swatch(parent: HTMLElement, color: HighlightColor, selected: boolean, action: () => void): HTMLButtonElement {
-  const button = parent.createEl("button", { cls: "reader-swatch", attr: { type: "button", "aria-pressed": String(selected), "data-color": color.id } });
-  button.style.setProperty("--reader-color", color.value);
-  setTooltip(button, color.name, { placement: "top" });
-  button.addEventListener("click", action);
-  return button;
-}
 
 export function colorMenu(colors: HighlightColor[], current: string, choose: (id: string) => void): Menu {
   const menu = new Menu();

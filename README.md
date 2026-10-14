@@ -35,7 +35,9 @@ pnpm dev:open
 pnpm dev
 ```
 
-`pnpm build` checks TypeScript, generates the CommonJS `main.js`, and copies `main.js`, `manifest.json`, and `styles.css` into this checkout's development vault. `pnpm dev` watches TypeScript changes and copies each successful build to the same vault. Restart the watcher after editing the build configuration. Changes to only `manifest.json` or `styles.css` need `pnpm dev:setup` to copy them.
+`pnpm build` checks TypeScript and Svelte components with `svelte-check`, generates the CommonJS `main.js`, and copies `main.js`, `manifest.json`, and `styles.css` into this checkout's development vault. `pnpm dev` watches TypeScript and Svelte changes and copies each successful build to the same vault. Restart the watcher after editing the build configuration. Changes to only `manifest.json` or `styles.css` need `pnpm dev:setup` to copy them.
+
+The plugin's own interface (the annotations sidebar, the highlight popup, and the page and zoom toolbar) is written as Svelte 5 components in `src/components/`. They reuse Obsidian's CSS classes and variables from `styles.css`, and `src/components/obsidian.ts` hands their buttons to Obsidian's `setIcon` and `setTooltip`, so they match the app and its themes. Menus, notices, modals, and the settings tab use Obsidian's own APIs directly.
 
 The vault lives at `.dev-vault/Reader Plugin Dev - <checkout-directory>/`. On main, the vault name is `Reader Plugin Dev - reader-plugin`. A checkout in a directory named `book-search` gets `Reader Plugin Dev - book-search`. Each vault has an original sample book and reading note. Setup creates missing files and preserves existing notes and settings. To update existing fixture content, edit the note directly or create a fresh disposable vault.
 

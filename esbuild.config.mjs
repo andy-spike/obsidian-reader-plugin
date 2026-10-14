@@ -1,4 +1,5 @@
 import esbuild from "esbuild";
+import esbuildSvelte from "esbuild-svelte";
 import { builtinModules } from "node:module";
 import { deployPlugin, setupVault } from "./scripts/dev-vault.mjs";
 
@@ -15,7 +16,10 @@ const context = await esbuild.context({
   sourcemap: production ? false : "inline",
   minify: production,
   logLevel: "info",
-  plugins: [{
+  // Svelte's browser build, so components mount in Obsidian's window rather than as server-rendered HTML.
+  conditions: ["svelte", "browser"],
+  mainFields: ["svelte", "browser", "module", "main"],
+  plugins: [esbuildSvelte({ compilerOptions: { css: "injected", dev: !production } }), {
     name: "inline-pdf-worker",
     setup(build) {
       build.onLoad({ filter: /pdf\.worker\.min\.mjs$/ }, async (args) => ({
