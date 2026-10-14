@@ -1,6 +1,7 @@
 import { FileView, Menu, Scope, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { randomUUID } from "node:crypto";
 import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
+import type { NotePlace } from "./settings";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
@@ -46,14 +47,15 @@ export interface ReaderHost {
   store: AnnotationStore;
   settings(): ReaderSettings;
   ready(reader: ReaderView): void;
-  toggleAnnotations(): void;
+  /** Shows or hides the book note, in the place from settings unless one is given. */
+  toggleAnnotations(place?: NotePlace): void;
   /** Turns highlight mode on or off for every Reader. */
   toggleHighlightMode(): void;
   /** Sets the color highlight mode uses and turns the mode on. */
   chooseHighlightModeColor(id: string): void;
   openNative(file: TFile): void;
   /** Opens this PDF's book note, at a passage's section when given. */
-  openNote(reader: ReaderView, annotationId: string | null): void;
+  openNote(reader: ReaderView, annotationId: string | null, place?: NotePlace): void;
   /** What the reader wrote under a passage in the book note, or an empty string. */
   writing(record: AnnotationRecord, annotationId: string): string;
   lastPosition(path: string): ReadingPosition | undefined;
@@ -139,7 +141,17 @@ export class ReaderView extends FileView {
     contentEl.empty();
     contentEl.addClass("reader-view");
     // Each action is placed before the previous one, so they show in the reverse of this order.
-    this.addAction("notebook-pen", "Toggle book note (A)", () => this.host.toggleAnnotations());
+    const noteAction = this.addAction("notebook-pen", "Toggle book note (A)", () => this.host.toggleAnnotations());
+    // Right-click opens the note in either place this once, whatever the setting says.
+    noteAction.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      const current = this.host.settings().notePlace;
+      const menu = new Menu();
+      for (const [place, title, icon] of [["sidebar", "Open in the right sidebar", "panel-right"], ["beside", "Open beside the PDF", "columns-2"]] as const) {
+        menu.addItem(item => item.setTitle(title).setIcon(icon).setChecked(place === current).onClick(() => this.host.openNote(this, null, place)));
+      }
+      menu.showAtMouseEvent(event);
+    });
     this.modeAction = this.addAction("highlighter", "", () => this.host.toggleHighlightMode());
     this.modeAction.addClass("reader-mode-action");
     this.modeAction.addEventListener("contextmenu", event => {

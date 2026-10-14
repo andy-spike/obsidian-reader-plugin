@@ -2,6 +2,8 @@ import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSetting
 import { ANNOTATION_FOLDER } from "./annotations";
 
 export interface HighlightColor { id: string; name: string; value: string }
+/** Where the book note opens: the right sidebar, or beside the PDF as a tab in the main area. */
+export type NotePlace = "sidebar" | "beside";
 export interface ReaderSettings {
   colors: HighlightColor[];
   folder: string;
@@ -15,6 +17,7 @@ export interface ReaderSettings {
   highlightModeColor: string;
   /** Show the PDF's book note in the sidebar whenever a PDF opens in Reader. */
   showAnnotationsOnOpen: boolean;
+  notePlace: NotePlace;
 }
 export const NOTES_FOLDER = "Book notes";
 
@@ -44,7 +47,7 @@ export function colorOf(settings: ReaderSettings, id: string): HighlightColor {
 export const FIXED_COLORS = DEFAULT_COLORS.length;
 
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown };
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown };
   const valid = Array.isArray(data.colors)
     ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
@@ -61,6 +64,7 @@ export function loadSettings(saved: unknown): ReaderSettings {
     noteTemplate: typeof data.noteTemplate === "string" ? cleanFolder(data.noteTemplate) ?? "" : "",
     highlightMode: data.highlightMode === true,
     showAnnotationsOnOpen: data.showAnnotationsOnOpen !== false,
+    notePlace: data.notePlace === "beside" ? "beside" : "sidebar",
     highlightModeColor: typeof data.highlightModeColor === "string" && /^[\w-]+$/.test(data.highlightModeColor) ? data.highlightModeColor : DEFAULT_COLORS[0]!.id,
   };
 }
@@ -101,11 +105,22 @@ export class ReaderSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Reader").setHeading();
     new Setting(containerEl)
       .setName("Show the book note with PDFs")
-      .setDesc("Open the PDF's book note in the sidebar whenever a PDF opens in Reader. When off, open it with the book note button in the Reader header, the A key, or the Toggle book note in sidebar command.")
+      .setDesc("Open the PDF's book note whenever a PDF opens in Reader. When off, open it with the book note button in the Reader header, the A key, or the Toggle book note command.")
       .addToggle(toggle => toggle.setValue(settings.showAnnotationsOnOpen).onChange(async value => {
         settings.showAnnotationsOnOpen = value;
         await this.host.saveSettings();
       }));
+    new Setting(containerEl)
+      .setName("Open book notes")
+      .setDesc("Where the book note opens from the button, the A and N keys, and Note. Right-click the book note button to open it in the other place once.")
+      .addDropdown(dropdown => dropdown
+        .addOption("sidebar", "In the right sidebar")
+        .addOption("beside", "Beside the PDF")
+        .setValue(settings.notePlace)
+        .onChange(async value => {
+          settings.notePlace = value === "beside" ? "beside" : "sidebar";
+          await this.host.saveSettings();
+        }));
 
     new Setting(containerEl).setName("Highlight colors").setHeading()
       .setDesc("Colors appear in the selection popup in this order. Primary and Secondary always come first; you can change their color and name. Colors you add follow them, and you can reorder them with the handles or arrows. Give each one a meaning, such as “Key idea” or “Question”.");

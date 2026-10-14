@@ -7,7 +7,7 @@ import { BookNotes } from "./book-notes";
 import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
 import { stopPdfWorker } from "./pdf-engine";
-import { colorOf, loadSettings, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
+import { colorOf, loadSettings, NotePlace, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
 
 export default class ReaderPlugin extends Plugin implements SettingsHost {
   settings!: ReaderSettings;
@@ -39,33 +39,40 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => { if (info.file) bookNotes.edited(info.file.path, () => editor.getValue()); }));
     const workspace = this.app.workspace;
     const inSidebar = (leaf: WorkspaceLeaf) => leaf.getRoot() === workspace.rightSplit || leaf.getRoot() === workspace.leftSplit;
+    /** Where the book note tab is: the right sidebar, or beside the PDF in the main area. */
+    const placeOf = (leaf: WorkspaceLeaf): NotePlace => inSidebar(leaf) ? "sidebar" : "beside";
     /**
-     * The sidebar tab that shows the active PDF's book note: a note tab, or a placeholder while that PDF has no note yet.
+     * The tab that shows the active PDF's book note in a place: a note tab, or a placeholder while that PDF has no note yet.
      * Found again after a restart by its saved state, since a tab not shown yet is still a placeholder itself.
      */
-    const panelLeaf = (): WorkspaceLeaf | null => {
-      let found: WorkspaceLeaf | null = workspace.getLeavesOfType(ANNOTATIONS_VIEW)[0] ?? null;
+    const panelLeaf = (place: NotePlace): WorkspaceLeaf | null => {
+      let found: WorkspaceLeaf | null = workspace.getLeavesOfType(ANNOTATIONS_VIEW).find(leaf => placeOf(leaf) === place) ?? null;
       if (!found) workspace.iterateAllLeaves(leaf => {
         const state = leaf.getViewState();
-        if (!found && inSidebar(leaf) && state.type === "markdown" && bookNotes.isNote(state.state?.file)) found = leaf;
+        if (!found && placeOf(leaf) === place && state.type === "markdown" && bookNotes.isNote(state.state?.file)) found = leaf;
       });
       return found;
     };
     const refreshPanel = () => workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => { if (leaf.view instanceof AnnotationsView) leaf.view.refresh(); });
+    /** Shows the active PDF's book note, or the placeholder, in a tab. */
+    const fill = async (leaf: WorkspaceLeaf): Promise<void> => {
+      const record = this.reader?.getRecord() ?? null;
+      const file = record ? bookNotes.file(record) : null;
+      const state = leaf.getViewState();
+      if (file) {
+        if (state.type !== "markdown" || state.state?.file !== file.path) await leaf.setViewState({ type: "markdown", state: { file: file.path, mode: "source" }, active: false });
+      } else if (record || state.type === "empty") {
+        if (state.type !== ANNOTATIONS_VIEW) await leaf.setViewState({ type: ANNOTATIONS_VIEW, active: false });
+      }
+    };
     let panelOpening: Promise<WorkspaceLeaf | null> | null = null;
-    /** Shows the active PDF's book note in the sidebar tab, creating the tab if needed. Reveals it when asked. */
-    const showPanel = (reveal: boolean): Promise<WorkspaceLeaf | null> => {
+    /** Shows the active PDF's book note in the sidebar or beside the PDF, creating that tab if needed. Reveals it when asked. */
+    const showPanel = (reveal: boolean, place: NotePlace = this.settings.notePlace): Promise<WorkspaceLeaf | null> => {
       const run = async (): Promise<WorkspaceLeaf | null> => {
-        const record = this.reader?.getRecord() ?? null;
-        const file = record ? bookNotes.file(record) : null;
-        const leaf = panelLeaf() ?? workspace.getRightLeaf(false);
+        const reader = this.reader;
+        const leaf = panelLeaf(place) ?? (place === "sidebar" ? workspace.getRightLeaf(false) : reader ? workspace.createLeafBySplit(reader.leaf, "vertical") : null);
         if (!leaf) return null;
-        const state = leaf.getViewState();
-        if (file) {
-          if (state.type !== "markdown" || state.state?.file !== file.path) await leaf.setViewState({ type: "markdown", state: { file: file.path, mode: "source" }, active: false });
-        } else if (record || state.type === "empty") {
-          if (state.type !== ANNOTATIONS_VIEW) await leaf.setViewState({ type: ANNOTATIONS_VIEW, active: false });
-        }
+        await fill(leaf);
         refreshPanel();
         if (!reveal) return leaf;
         // revealLeaf brings a background Obsidian window to the front. A reader also loads without the user,
@@ -79,21 +86,23 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       void next.finally(() => { if (panelOpening === next) panelOpening = null; });
       return next;
     };
-    /** Switches an existing sidebar tab to the active PDF's note, without opening the sidebar. */
-    const updatePanel = () => { if (panelLeaf()) void showPanel(false); };
+    /** Switches book note tabs, in the sidebar and beside the PDF, to the active PDF's note, without opening anything. */
+    const updatePanel = () => {
+      for (const place of ["sidebar", "beside"] as const) if (panelLeaf(place)) void showPanel(false, place);
+    };
     /** Set when the reader closes the panel with the toggle, so opening another PDF doesn't bring it straight back. */
     let panelDismissed = false;
-    const toggleAnnotations = async (): Promise<void> => {
-      const leaf = panelLeaf();
+    const toggleAnnotations = async (place: NotePlace = this.settings.notePlace): Promise<void> => {
+      const leaf = panelLeaf(place);
       const sidebar = leaf && inSidebar(leaf);
       const visible = !!leaf && leaf.view.containerEl.isShown() && !(sidebar && (leaf.getRoot() as WorkspaceSidedock).collapsed);
       if (!visible) {
         panelDismissed = false;
-        await showPanel(true);
+        await showPanel(true, place);
         return;
       }
       panelDismissed = true;
-      // In a sidebar, collapse it like Obsidian's own sidebar toggle; elsewhere, close the tab.
+      // In the sidebar, collapse it like Obsidian's own sidebar toggle; beside the PDF, close the tab.
       if (sidebar) (leaf.getRoot() as WorkspaceSidedock).collapse();
       else leaf.detach();
     };
@@ -152,15 +161,15 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       this.settings.highlightMode = !this.settings.highlightMode;
       void this.saveSettings();
     };
-    const openNote = (reader: ReaderView, annotationId: string | null) => {
+    const openNote = (reader: ReaderView, annotationId: string | null, place?: NotePlace) => {
       const record = reader.getRecord();
       if (!record) return;
       this.reader = reader;
       panelDismissed = false;
-      void bookNotes.open(record, annotationId, () => showPanel(true)).catch(error => new Notice(`Could not open the book note: ${String(error)}`));
+      void bookNotes.open(record, annotationId, () => showPanel(true, place)).catch(error => new Notice(`Could not open the book note: ${String(error)}`));
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
-      store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(),
+      store, ready, settings: () => this.settings, toggleAnnotations: place => void toggleAnnotations(place),
       toggleHighlightMode,
       chooseHighlightModeColor: id => {
         this.settings.highlightModeColor = id;
@@ -200,7 +209,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         else new PdfPicker(this.app, file => void open(file, undefined, native)).open();
       },
     });
-    this.addCommand({ id: "show-annotations", name: "Toggle book note in sidebar", callback: () => void toggleAnnotations() });
+    this.addCommand({ id: "show-annotations", name: "Toggle book note", callback: () => void toggleAnnotations() });
     const routeNow = () => {
       if (!this.routing) return;
       for (const leaf of this.app.workspace.getLeavesOfType("pdf")) {
