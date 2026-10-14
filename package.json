@@ -13,6 +13,7 @@
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "dev:setup": "node scripts/dev-vault.mjs",
     "dev:open": "node scripts/open-dev-vault.mjs",
+    "headless": "node scripts/headless.mjs",
     "worktree:setup": "pnpm install --frozen-lockfile && pnpm build",
     "test": "node --test tests/*.test.mjs"
   },

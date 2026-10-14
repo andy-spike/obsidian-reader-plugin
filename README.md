@@ -54,6 +54,24 @@ obsidian vault="Reader Plugin Dev - reader-plugin" commands filter=reader-plugin
 
 Use the matching vault name when checking another checkout. The plugin makes no model calls at this stage. For the PDF workflow, open `Books/Sample reading book.pdf` with **Reader Plugin: Open PDF in Reader** and follow the [runtime verification steps](docs/pdf-reader.md#development-verification). Run `pnpm test` for annotation storage checks.
 
+### Headless checks
+
+`pnpm headless` runs a second, private Obsidian on this checkout's development vault with no window. It never takes focus, so checks can run while you keep working, including in your own Obsidian. It uses the Obsidian you already have installed (set `OBSIDIAN_APP` to its executable or AppImage if it isn't found) and keeps its own app data in `.dev-vault/headless-obsidian/`. It shares the newest app update from your everyday install, so both run the same Obsidian version. Commands talk to it over the Chrome DevTools Protocol:
+
+```sh
+pnpm headless start                    # launch it; other commands also start it when needed
+pnpm build && pnpm headless reload     # load a new build
+pnpm headless eval 'app.workspace.getActiveFile()?.path'
+pnpm headless screenshot /tmp/reader.png
+pnpm headless hover '.reader-popup button'   # real pointer input: tooltips and :hover appear
+pnpm headless click 300,400
+pnpm headless press Escape
+pnpm headless type 'a comment'
+pnpm headless stop
+```
+
+Add `--window=Settings` to drive the settings window, which Obsidian opens separately. The headless Obsidian and your own Obsidian open the same vault folder, so they share its `.obsidian/workspace.json` and plugin data. Close the development vault in your own Obsidian while headless checks run, or expect each to pick up the other's last layout and settings.
+
 ## Commits
 
 Agents should commit each completed unit of work, such as a verified fix or a finished feature. Commit often, keeping each commit focused so the history clearly records progress.
