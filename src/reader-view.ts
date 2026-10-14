@@ -669,7 +669,7 @@ export class ReaderView extends FileView {
     }
   }
 
-  /** Scrolls a highlight into view from the sidebar and briefly pulses it. */
+  /** Scroll to a highlight and briefly pulse it. */
   async showAnnotation(annotation: Annotation): Promise<void> {
     await this.app.workspace.revealLeaf(this.leaf);
     this.app.workspace.setActiveLeaf(this.leaf, { focus: true });
@@ -771,7 +771,7 @@ export class ReaderView extends FileView {
     this.registerDomEvent(doc, "keydown", event => {
       if (!this.popup.open || this.app.workspace.getActiveViewOfType(ReaderView) !== this) return;
       if (event.key === "Escape") this.dismissPopup();
-      // Number keys pick a color from the selection popup, matching the order shown in its tooltips.
+      // Number keys follow the selection popup's swatch order.
       else if (this.popup.mode === "selection" && /^[1-9]$/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && !(event.target as HTMLElement).closest?.("input, textarea, [contenteditable]")) {
         const color = this.host.settings().colors[Number(event.key) - 1];
         if (!color) return;

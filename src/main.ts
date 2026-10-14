@@ -166,8 +166,6 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       routePdfs();
       this.readers().forEach(reader => { if (reader.leaf !== leaf) reader.hidePopup(); });
       if (leaf && leaf.view.getViewType() !== "pdf") this.nativeTabs.delete(leaf);
-      // Switching to another PDF switches the sidebar to its note. Writing in a book note keeps that book as the active PDF;
-      // other notes leave the sidebar on the last PDF's note.
       const notePath = leaf?.view instanceof MarkdownView ? leaf.view.file?.path : undefined;
       void following.activate(leaf?.view instanceof ReaderView ? leaf.view : null, notePath).catch(reportNoteError);
     }));
@@ -183,13 +181,9 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         if (annotation && reader) await reader.showAnnotationWhenReady(annotation.id);
       } catch (error) { new Notice(`Could not open annotation: ${String(error)}`); }
     };
-    // A passage link opens its highlight, and a rendered link to a PDF, such as `[[book.pdf#page=2]]`, opens in the Reader at its page,
-    // reusing a Reader that already shows the PDF. Left to Obsidian, it would replace the note's tab with the native viewer, and the page would be lost
-    // when routing swaps in the Reader. Capturing at the document runs before Obsidian's own link handler.
-    /**
-     * The passage address under the pointer: a rendered link's address, or, where the editor shows a link as raw text (as it
-     * does for the block holding the cursor), the passage link at that spot of the line.
-     */
+    // Capture links before Obsidian replaces the note tab with its PDF viewer.
+    // Routing that viewer to Reader would lose the requested page.
+    /** Read a rendered passage link or a raw link in the editor block under the pointer. */
     const passageAt = (target: Element | null): string | null => {
       const rendered = target?.closest?.("a[href^='obsidian://reader-plugin?']");
       if (rendered) return rendered.getAttribute("href");
@@ -204,9 +198,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       }
       return null;
     };
-    // A passage link opens on press, before the editor moves its cursor into the block and redraws the link as raw text, which
-    // Obsidian would then try to open as an empty address. Opening here also avoids handing the obsidian:// address to the
-    // operating system, which may not send it back to this Obsidian.
+    // Handle the press before CodeMirror redraws the link as raw text.
+    // Keep obsidian:// links in this Obsidian instance instead of handing them to the operating system.
     const openPassageLink = (event: MouseEvent) => {
       if (event.button !== 0) return;
       const href = passageAt(event.target as Element | null);
@@ -381,8 +374,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
 
   onunload(): void {
     this.routing = false;
-    // Closing the views below records their final positions; write them before the plugin goes away. The cleanup after it
-    // must run even if that fails, or a copy of the plugin stays half-loaded beside the next one.
+    // Flush positions and clean up even if a Reader fails to report its final position.
     try {
       this.readers().forEach(reader => reader.savePosition());
     } catch (error) {

@@ -1,11 +1,9 @@
 import type { Annotation, AnnotationRecord } from "./annotations";
 
 /**
- * The text format of book notes: one Markdown note per PDF that holds a quote section for every highlight, followed by
- * whatever the reader writes about it. The note belongs to the reader. These functions add or remove whole sections and
- * never change text the reader wrote; they work on plain strings so they can be tested without Obsidian.
+ * Each highlight has a quote section in its PDF's book note. Reconciliation preserves the reader's writing.
  *
- * A section looks like this. The link in the first line carries the highlight's ID, which is how the section is found again.
+ * The passage link identifies the highlight; the block ID lets other notes link to the section.
  *
  *     > [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=…&annotation=…&page=34)
  *     > The quoted passage, as one flowing line.
@@ -16,8 +14,7 @@ import type { Annotation, AnnotationRecord } from "./annotations";
  *
  *     ---
  *
- * A `---` line separates a section from the one before it, unless a heading of the reader's sits between them. The separator
- * belongs to the section below it, so it goes away with that section and is never part of the writing above it.
+ * Separators belong to the section below them. A reader's heading replaces the separator.
  */
 
 interface SectionInput {
@@ -45,7 +42,7 @@ export interface Section {
 const HEADER = /^>\s*\[!quote\][^\n]*?obsidian:\/\/reader-plugin\?[^)\s]*?annotation=([\w-]+)/;
 const HEADING = /^#{1,6}\s/;
 
-/** Obsidian shows block IDs while editing, so a section uses the first 8 characters of the highlight's ID, unique within one note. */
+/** Shorten block IDs because Obsidian shows them while editing. */
 function blockId(annotationId: string): string {
   return annotationId.slice(0, 8);
 }
@@ -57,13 +54,17 @@ function passageUri(documentId: string, annotationId: string, page: number): str
 const SEPARATOR = "---";
 
 /**
- * A quote as one flowing line, as a section writes it. PDF text keeps the page's line breaks; they become spaces, and a word
- * hyphenated across a line break is joined without a space, keeping the hyphen, so no letters are lost. Compare a section's
- * `quote` to this to see if it was edited; sections written before quotes flowed compare equal.
+ * Join PDF line breaks, preserving hyphens within words. The same normalization detects user edits to older quotes.
  */
 function quoteText(quote: string): string {
   const lines = quote.replace(/\r\n?/g, "\n").split("\n").map(line => line.trim()).filter(Boolean);
-  return lines.reduce((text, line) => !text ? line : /\p{L}-$/u.test(text) && /^\p{Ll}/u.test(line) ? text + line : `${text} ${line}`, "").replace(/\s+/g, " ");
+  let text = "";
+  for (const line of lines) {
+    if (!text) text = line;
+    else if (/\p{L}-$/u.test(text) && /^\p{Ll}/u.test(line)) text += line;
+    else text += ` ${line}`;
+  }
+  return text.replace(/\s+/g, " ");
 }
 
 /** The lines of a new section, without the blank lines around it. */

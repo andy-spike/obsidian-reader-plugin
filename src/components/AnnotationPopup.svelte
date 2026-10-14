@@ -11,9 +11,9 @@
     | { mode: "annotation"; annotation: Annotation; colors: HighlightColor[]; actions: AnnotationActions };
 
   let content = $state.raw<Content | null>(null);
-  /** Increments on each show so the card is rebuilt from scratch, like a newly opened popup. */
+  /** Rebuild the card each time it opens. */
   let shown = $state(0);
-  /** Mirrors the annotation, which is a plain object edited in place by the reader and the sidebar. */
+  /** Mirror edits to the plain annotation object in Svelte state. */
   let color = $state("");
 
   export function showSelection(colors: HighlightColor[], lastColor: string, actions: SelectionActions): void {
@@ -27,7 +27,7 @@
     shown++;
   }
 
-  /** Reflects edits made elsewhere, such as the sidebar or another tab of the same PDF. */
+  /** Refresh after palette changes or edits in another Reader tab. */
   export function sync(colors: HighlightColor[]): void {
     if (content?.mode !== "annotation") return;
     content = { ...content, colors };
@@ -41,7 +41,7 @@
   {#if content?.mode === "selection"}
     {@const { colors, actions } = content}
     <div class="reader-popup-row">
-      <!-- Nothing is highlighted yet, so no swatch is marked as chosen. Hovering one previews it on the selection; keys 1–9 pick one. -->
+      <!-- A selection has no chosen color until it becomes a highlight. -->
       <div class="reader-popup-swatches">
         {#each colors as option, index (option.id)}
           <Swatch
