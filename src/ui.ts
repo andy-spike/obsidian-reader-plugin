@@ -2,8 +2,18 @@ import { Menu, Notice } from "obsidian";
 import { Annotation, AnnotationRecord, AnnotationStore } from "./annotations";
 import { HighlightColor } from "./settings";
 
-export function colorMenu(colors: HighlightColor[], current: string, choose: (id: string) => void): Menu {
+/**
+ * A menu whose items may carry a checkmark. Obsidian only adds the checkmark to the checked item, so the menu's width
+ * would change with the selection; the class reserves the checkmark's space on every item (see styles.css).
+ */
+export function checkMenu(): Menu {
   const menu = new Menu();
+  (menu as Menu & { dom?: HTMLElement }).dom?.addClass("reader-check-menu");
+  return menu;
+}
+
+export function colorMenu(colors: HighlightColor[], current: string, choose: (id: string) => void): Menu {
+  const menu = checkMenu();
   for (const color of colors) menu.addItem(item => item.setTitle(color.name).setChecked(color.id === current).onClick(() => choose(color.id)));
   return menu;
 }

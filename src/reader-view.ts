@@ -4,7 +4,7 @@ import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
-import { colorMenu, deleteAnnotation } from "./ui";
+import { checkMenu, colorMenu, deleteAnnotation } from "./ui";
 import { OutlineModal } from "./outline-modal";
 import type { OutlineNode } from "./components/OutlineTree.svelte";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
@@ -185,7 +185,7 @@ export class ReaderView extends FileView {
       zoomBy: direction => this.zoomBy(direction),
       reset: () => this.resetZoom(),
       zoomMenu: rect => {
-        const menu = new Menu();
+        const menu = checkMenu();
         const option = (title: string, checked: boolean, choose: () => void) => menu.addItem(item => item.setTitle(title).setChecked(checked).onClick(choose));
         option("Fit width", this.fit === "width", () => this.setZoom(this.fitZoom("width"), "width"));
         option("Fit page", this.fit === "page", () => this.setZoom(this.fitZoom("page"), "page"));
