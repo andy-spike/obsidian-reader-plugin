@@ -72,6 +72,9 @@ test("book note settings have defaults and clean paths", () => {
   assert.equal(defaults.notesFolder, "Book notes");
   assert.equal(defaults.noteTemplate, "");
   assert.equal(defaults.noteOpening, "split");
+  assert.equal(defaults.highlightMode, false);
+  assert.equal(loadSettings({ highlightMode: true }).highlightMode, true);
+  assert.equal(loadSettings({ highlightMode: "yes" }).highlightMode, false);
   const saved = loadSettings({ notesFolder: " /Reading/Notes/ ", noteTemplate: "Templates/Book.md", noteOpening: "tab" });
   assert.equal(saved.notesFolder, "Reading/Notes");
   assert.equal(saved.noteTemplate, "Templates/Book.md");

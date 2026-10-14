@@ -11,6 +11,8 @@ export interface ReaderSettings {
   /** A note whose text starts each new book note, or empty for the default. */
   noteTemplate: string;
   noteOpening: NoteOpening;
+  /** Highlight a passage as soon as it is selected with the mouse, in the last used color, instead of showing the popup. */
+  highlightMode: boolean;
 }
 export const NOTES_FOLDER = "Book notes";
 
@@ -40,7 +42,7 @@ export function colorOf(settings: ReaderSettings, id: string): HighlightColor {
 export const FIXED_COLORS = DEFAULT_COLORS.length;
 
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; noteOpening?: unknown };
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; noteOpening?: unknown; highlightMode?: unknown };
   const valid = Array.isArray(data.colors)
     ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
@@ -56,6 +58,7 @@ export function loadSettings(saved: unknown): ReaderSettings {
     notesFolder: notesFolder ?? NOTES_FOLDER,
     noteTemplate: typeof data.noteTemplate === "string" ? cleanFolder(data.noteTemplate) ?? "" : "",
     noteOpening: data.noteOpening === "tab" ? "tab" : "split",
+    highlightMode: data.highlightMode === true,
   };
 }
 

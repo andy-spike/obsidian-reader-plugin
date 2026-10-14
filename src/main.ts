@@ -102,12 +102,17 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
       return leaf.view instanceof ReaderView ? leaf.view : null;
     };
+    const toggleHighlightMode = () => {
+      this.settings.highlightMode = !this.settings.highlightMode;
+      void this.saveSettings();
+    };
     const openNote = (reader: ReaderView, annotationId: string | null) => {
       const record = reader.getRecord();
       if (record) void bookNotes.open(record, annotationId, reader.leaf).catch(error => new Notice(`Could not open the book note: ${String(error)}`));
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
-      store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(), openNative: file => void open(file, undefined, true), openNote,
+      store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(),
+      toggleHighlightMode, openNative: file => void open(file, undefined, true), openNote,
       writing: (record, annotationId) => bookNotes.writing(record, annotationId),
       lastPosition: path => this.positions.get(path),
       rememberPosition: (path, position) => this.rememberPosition(path, position),
@@ -270,6 +275,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     readerCommand("reset-zoom", "Reset zoom", view => view.resetZoom());
     readerCommand("table-of-contents", "Show table of contents", view => void view.openOutline());
     readerCommand("open-book-note", "Open book note", view => openNote(view, null));
+    this.addCommand({ id: "toggle-highlight-mode", name: "Toggle highlight mode", callback: toggleHighlightMode });
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       if (file instanceof TFile && file.extension === "pdf") {
         menu.addItem(item => item.setTitle("Open in Reader").setIcon("book-open").onClick(() => void open(file)));
