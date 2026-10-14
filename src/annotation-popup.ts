@@ -5,14 +5,15 @@ import { HighlightColor } from "./settings";
 
 type PopupCard = ReturnType<typeof mount<Record<string, never>, {
   showSelection(colors: HighlightColor[], lastColor: string, actions: SelectionActions): void;
-  showAnnotation(annotation: Annotation, colors: HighlightColor[], actions: AnnotationActions, focusComment: boolean): void;
+  showAnnotation(annotation: Annotation, colors: HighlightColor[], actions: AnnotationActions): void;
   sync(colors: HighlightColor[]): void;
   clear(): void;
 }>>;
 
 /** `preview` tints the selection in a color while its swatch is hovered or focused, and clears it with null. */
-export interface SelectionActions { highlight(color: string): void; comment(): void; copy(): void; preview(color: string | null): void }
-export interface AnnotationActions { recolor(color: string): void; comment(text: string): void; copy(): void; remove(): void }
+/** `note` opens the book note at the passage's section, highlighting the selection first. */
+export interface SelectionActions { highlight(color: string): void; note(): void; copy(): void; preview(color: string | null): void }
+export interface AnnotationActions { recolor(color: string): void; note(): void; copy(): void; remove(): void }
 /** Horizontal position and the vertical span the card should not cover, in viewport coordinates. */
 export interface PopupAnchor { clientX: number; top: number; bottom: number; above: boolean }
 
@@ -31,10 +32,8 @@ export class AnnotationPopup {
     this.card = mount(Card, { target: this.el });
     // Buttons must not take focus away from the text selection they act on.
     this.el.addEventListener("mousedown", event => { if ((event.target as HTMLElement).closest("button")) event.preventDefault(); });
-    // Enter finishes a comment, which saves as it is typed; Shift+Enter starts a new line. Enter on a button still presses it.
     this.el.addEventListener("keydown", event => {
-      const finish = event.key === "Enter" && !event.shiftKey && !event.isComposing && event.target instanceof HTMLTextAreaElement;
-      if (event.key === "Escape" || finish) {
+      if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
         this.hide();
@@ -56,10 +55,10 @@ export class AnnotationPopup {
     this.show(at);
   }
 
-  showAnnotation(at: PopupAnchor, annotation: Annotation, colors: HighlightColor[], actions: AnnotationActions, focusComment: boolean): void {
+  showAnnotation(at: PopupAnchor, annotation: Annotation, colors: HighlightColor[], actions: AnnotationActions): void {
     this.mode = "annotation";
     this.annotation = annotation;
-    this.card.showAnnotation(annotation, colors, actions, focusComment);
+    this.card.showAnnotation(annotation, colors, actions);
     this.show(at);
   }
 
@@ -81,7 +80,7 @@ export class AnnotationPopup {
 
   private show(at: PopupAnchor): void {
     this.el.hidden = false;
-    // Render now so the card can be measured and its comment field focused.
+    // Render now so the card can be measured.
     flushSync();
     const host = this.host.getBoundingClientRect();
     this.anchor = { x: at.clientX - host.left, top: at.top - host.top, bottom: at.bottom - host.top, above: at.above };

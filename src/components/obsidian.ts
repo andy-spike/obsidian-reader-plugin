@@ -9,9 +9,3 @@ export function icon(name: string): Attachment<HTMLElement> {
 export function tooltip(label: string, placement: "top" | "bottom" = "top"): Attachment<HTMLElement> {
   return node => setTooltip(node, label, { placement });
 }
-
-/** Focuses a newly shown text field with the caret after its text. */
-export const focusAtEnd: Attachment<HTMLTextAreaElement> = node => {
-  node.focus({ preventScroll: true });
-  node.setSelectionRange(node.value.length, node.value.length);
-};

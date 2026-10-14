@@ -50,6 +50,8 @@ export interface ReaderHost {
   openNative(file: TFile): void;
   /** Opens this PDF's book note, at a passage's section when given. */
   openNote(reader: ReaderView, annotationId: string | null): void;
+  /** What the reader wrote under a passage in the book note, or an empty string. */
+  writing(record: AnnotationRecord, annotationId: string): string;
   lastPosition(path: string): ReadingPosition | undefined;
   rememberPosition(path: string, position: ReadingPosition): void;
 }
@@ -518,9 +520,19 @@ export class ReaderView extends FileView {
         Object.assign(mark.style, { left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.width * 100}%`, height: `${r.height * 100}%` });
         mark.toggleClass("is-hovered", a.id === this.hovered);
         mark.toggleClass("is-flashing", a.id === this.flashing);
-        if (a.comment && index === a.rects.length - 1) mark.createDiv({ cls: "reader-mark-note" });
+        if (index === a.rects.length - 1 && this.writing(a.id)) mark.createDiv({ cls: "reader-mark-note" });
       });
     }
+  }
+
+  /** What the reader wrote under a passage in the book note, or an empty string. */
+  writing(annotationId: string): string {
+    return this.record ? this.host.writing(this.record, annotationId) : "";
+  }
+
+  /** Opens the book note at a passage's section, or at the top. */
+  openNote(annotationId: string | null): void {
+    this.host.openNote(this, annotationId);
   }
 
   refreshAnnotations(): void {
@@ -627,7 +639,7 @@ export class ReaderView extends FileView {
         this.showSelectionPopup({ clientX: event.clientX, top: event.clientY, bottom: event.clientY, above: event.clientY < bounds.top + bounds.height / 2 });
       } else if (!this.pointer.dismissed && Math.hypot(event.clientX - this.pointer.x, event.clientY - this.pointer.y) < 4) {
         const hit = this.annotationAt(event.clientX, event.clientY);
-        if (hit) this.showAnnotationPopup(hit.annotation, this.anchorFor(hit.annotation, event.clientX), false);
+        if (hit) this.showAnnotationPopup(hit.annotation, this.anchorFor(hit.annotation, event.clientX));
       }
     });
     this.registerDomEvent(doc, "pointerdown", event => {
@@ -661,7 +673,7 @@ export class ReaderView extends FileView {
         const color = this.host.settings().colors[Number(event.key) - 1];
         if (!color) return;
         event.preventDefault();
-        this.createHighlights(color.id, false, { clientX: 0, top: 0, bottom: 0, above: false });
+        this.createHighlights(color.id, false);
       }
     });
     let hoverFrame = 0;
@@ -746,8 +758,8 @@ export class ReaderView extends FileView {
     const colors = this.host.settings().colors;
     if (!colors.some(color => color.id === this.lastColor)) this.lastColor = colors[0]!.id;
     this.popup.showSelection(at, colors, this.lastColor, {
-      highlight: color => this.createHighlights(color, false, at),
-      comment: () => this.createHighlights(this.lastColor, true, at),
+      highlight: color => this.createHighlights(color, false),
+      note: () => this.createHighlights(this.lastColor, true),
       copy: () => this.copy(this.passages.map(p => p.quote.exact).join(" ")),
       preview: color => this.previewColor(color),
     });
@@ -759,35 +771,34 @@ export class ReaderView extends FileView {
     if (color) this.pages.style.setProperty("--reader-preview", color.value);
   }
 
-  private showAnnotationPopup(annotation: Annotation, at: PopupAnchor, focusComment: boolean): void {
+  private showAnnotationPopup(annotation: Annotation, at: PopupAnchor): void {
     this.popup.showAnnotation(at, annotation, this.host.settings().colors, {
       recolor: color => {
         annotation.color = this.lastColor = color;
         void this.persist();
       },
-      comment: text => {
-        annotation.comment = text;
-        void this.persist();
+      note: () => {
+        this.popup.hide();
+        this.openNote(annotation.id);
       },
       copy: () => this.copy(annotation.quote.exact),
       remove: () => {
         this.popup.hide();
         if (this.record) deleteAnnotation(this.host.store, this.record, annotation);
       },
-    }, focusComment);
+    });
   }
 
   /** Highlights the current selection. Used by the popup and by the highlight commands. */
-  addHighlight(withComment: boolean): void {
+  addHighlight(withNote: boolean): void {
     this.passages = this.readSelection();
-    const rects = this.passages.length ? this.contentEl.ownerDocument.getSelection()!.getRangeAt(0).getClientRects() : null;
-    const last = rects?.item(rects.length - 1);
-    if (!last) { this.toast("Select a passage in the PDF first."); return; }
+    if (!this.passages.length) { this.toast("Select a passage in the PDF first."); return; }
     if (!this.host.settings().colors.some(color => color.id === this.lastColor)) this.lastColor = this.host.settings().colors[0]!.id;
-    this.createHighlights(this.lastColor, withComment, { clientX: last.right, top: last.top, bottom: last.bottom, above: false });
+    this.createHighlights(this.lastColor, withNote);
   }
 
-  private createHighlights(color: string, withComment: boolean, at: PopupAnchor): void {
+  /** Highlights the selected passages. With `withNote`, opens the book note at the first one's section to write about it. */
+  private createHighlights(color: string, withNote: boolean): void {
     if (!this.record || !this.passages.length) return;
     const createdAt = new Date().toISOString();
     const created = this.passages.map(passage => ({ ...passage, id: randomUUID(), color, comment: "", createdAt }));
@@ -796,8 +807,8 @@ export class ReaderView extends FileView {
     this.passages = [];
     this.contentEl.ownerDocument.getSelection()?.removeAllRanges();
     void this.persist();
-    if (withComment) this.showAnnotationPopup(created[created.length - 1]!, this.anchorFor(created[created.length - 1]!, at.clientX), true);
-    else this.popup.hide();
+    this.popup.hide();
+    if (withNote) this.openNote(created[0]!.id);
   }
 
   private copy(text: string): void {

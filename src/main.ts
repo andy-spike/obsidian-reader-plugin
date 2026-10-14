@@ -34,6 +34,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.register(() => bookNotes.dispose());
     this.registerEvent(this.app.vault.on("modify", file => { if (file instanceof TFile) void bookNotes.changed(file); }));
     this.registerEvent(this.app.vault.on("delete", file => bookNotes.deleted(file.path)));
+    this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => { if (info.file) bookNotes.edited(info.file.path, () => editor.getValue()); }));
     const refreshSidebar = () => this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
     let sidebarOpening: Promise<void> | null = null;
     const showAnnotations = (): Promise<void> => {
@@ -74,7 +75,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     const ready = (reader: ReaderView) => {
       const record = reader.getRecord();
       if (record) void bookNotes.load(record).then(() => { if (record.annotations.length) bookNotes.schedule(record); });
-      if (this.reader === reader || this.app.workspace.getMostRecentLeaf() === reader.leaf || this.app.workspace.getActiveViewOfType(ReaderView) === reader) {
+      const noteActive = !!record?.notePath && this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path === record.notePath;
+      if (this.reader === reader || this.app.workspace.getMostRecentLeaf() === reader.leaf || this.app.workspace.getActiveViewOfType(ReaderView) === reader || noteActive) {
         this.reader = reader.getRecord() ? reader : null;
         refreshSidebar();
         if (this.reader && !sidebarDismissed) void showAnnotations();
@@ -103,8 +105,17 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
       store, ready, settings: () => this.settings, toggleAnnotations: () => void toggleAnnotations(), openNative: file => void open(file, undefined, true), openNote,
+      writing: (record, annotationId) => bookNotes.writing(record, annotationId),
       lastPosition: path => this.positions.get(path),
       rememberPosition: (path, position) => this.rememberPosition(path, position),
+    }));
+    // What you wrote in a book note shows as dots on highlights and previews in the sidebar, so redraw both when it changes.
+    this.register(bookNotes.subscribe(documentId => {
+      this.app.workspace.getLeavesOfType(READER_VIEW).forEach(leaf => {
+        const reader = leaf.view as ReaderView;
+        if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations();
+      });
+      refreshSidebar();
     }));
     this.addSettingTab(this.settingTab = new ReaderSettingTab(this.app, this));
     // Saving is silent while it works. Report a failing vault write once, and again when it recovers.
@@ -155,8 +166,11 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         if (readerLeaf !== leaf) (readerLeaf.view as ReaderView).hidePopup();
       });
       if (leaf && leaf.view.getViewType() !== "pdf") this.nativeTabs.delete(leaf);
-      if (leaf?.view instanceof ReaderView) {
-        this.reader = leaf.view;
+      // While you write in a book note, the sidebar keeps showing that book's highlights.
+      const notePath = leaf?.view instanceof MarkdownView ? leaf.view.file?.path : undefined;
+      const noteReader = notePath ? this.app.workspace.getLeavesOfType(READER_VIEW).map(other => other.view as ReaderView).find(reader => reader.getRecord()?.notePath === notePath) : undefined;
+      if (leaf?.view instanceof ReaderView || noteReader) {
+        this.reader = noteReader ?? leaf!.view as ReaderView;
         refreshSidebar();
       } else if (leaf && leaf.view.getViewType() !== ANNOTATIONS_VIEW && this.app.workspace.getMostRecentLeaf() === leaf) {
         this.reader = null;
@@ -181,13 +195,14 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     };
     this.registerDomEvent(document, "click", openPdfLink, { capture: true });
     this.registerEvent(this.app.workspace.on("window-open", win => this.registerDomEvent(win.doc, "click", openPdfLink, { capture: true })));
-    for (const withComment of [false, true]) this.addCommand({
-      id: withComment ? "highlight-with-comment" : "highlight-selection",
-      name: withComment ? "Highlight selected PDF passage with comment" : "Highlight selected PDF passage",
+    // The note command keeps its old ID, so hotkeys set for "Highlight selected PDF passage with comment" still work.
+    for (const withNote of [false, true]) this.addCommand({
+      id: withNote ? "highlight-with-comment" : "highlight-selection",
+      name: withNote ? "Highlight selected PDF passage and write about it in the book note" : "Highlight selected PDF passage",
       checkCallback: checking => {
         const view = this.app.workspace.getActiveViewOfType(ReaderView);
         if (!view) return false;
-        if (!checking) view.addHighlight(withComment);
+        if (!checking) view.addHighlight(withNote);
         return true;
       },
     });

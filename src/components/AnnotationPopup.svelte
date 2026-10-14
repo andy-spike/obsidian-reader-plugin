@@ -5,7 +5,6 @@
   import IconButton from "./IconButton.svelte";
   import Swatch from "./Swatch.svelte";
   import TextButton from "./TextButton.svelte";
-  import { focusAtEnd } from "./obsidian";
 
   type Content =
     | { mode: "selection"; colors: HighlightColor[]; lastColor: string; actions: SelectionActions }
@@ -14,23 +13,17 @@
   let content = $state.raw<Content | null>(null);
   /** Increments on each show so the card is rebuilt from scratch, like a newly opened popup. */
   let shown = $state(0);
-  let editor = $state(false);
-  let focusEditor = $state(false);
   /** Mirrors the annotation, which is a plain object edited in place by the reader and the sidebar. */
   let color = $state("");
-  let comment = $state("");
 
   export function showSelection(colors: HighlightColor[], lastColor: string, actions: SelectionActions): void {
     content = { mode: "selection", colors, lastColor, actions };
     shown++;
   }
 
-  export function showAnnotation(annotation: Annotation, colors: HighlightColor[], actions: AnnotationActions, focusComment: boolean): void {
+  export function showAnnotation(annotation: Annotation, colors: HighlightColor[], actions: AnnotationActions): void {
     content = { mode: "annotation", annotation, colors, actions };
     color = annotation.color;
-    comment = annotation.comment;
-    editor = focusComment || !!annotation.comment;
-    focusEditor = focusComment;
     shown++;
   }
 
@@ -39,8 +32,6 @@
     if (content?.mode !== "annotation") return;
     content = { ...content, colors };
     color = content.annotation.color;
-    comment = content.annotation.comment;
-    if (comment) editor = true;
   }
 
   export function clear(): void { content = null; }
@@ -60,7 +51,7 @@
         {/each}
       </div>
       <div class="reader-popup-divider"></div>
-      <TextButton icon="message-square-plus" text="Comment" onclick={() => actions.comment()} />
+      <TextButton icon="notebook-pen" text="Note" onclick={() => actions.note()} />
       <IconButton tooltip={false} icon="copy" label="Copy text" onclick={() => actions.copy()} />
     </div>
   {:else if content?.mode === "annotation"}
@@ -72,20 +63,9 @@
         {/each}
       </div>
       <div class="reader-popup-divider"></div>
-      {#if editor}
-        <IconButton tooltip={false} icon="message-square-x" label="Remove comment" onclick={() => { actions.comment(""); editor = false; }} />
-      {:else}
-        <IconButton tooltip={false} icon="message-square-plus" label="Add comment" onclick={() => { editor = true; focusEditor = true; }} />
-      {/if}
+      <IconButton tooltip={false} icon="notebook-pen" label="Write about it in the book note" onclick={() => actions.note()} />
       <IconButton tooltip={false} icon="copy" label="Copy text" onclick={() => actions.copy()} />
       <IconButton tooltip={false} icon="trash-2" label="Delete highlight" class="mod-warning" onclick={() => actions.remove()} />
     </div>
-    {#if editor}
-      <textarea
-        class="reader-comment-editor" placeholder="Write a comment…" rows="1" value={comment}
-        oninput={event => actions.comment(event.currentTarget.value)}
-        {@attach focusEditor && focusAtEnd}
-      ></textarea>
-    {/if}
   {/if}
 {/key}

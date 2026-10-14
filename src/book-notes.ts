@@ -57,6 +57,17 @@ export class BookNotes {
     if (documentId) this.read(documentId, file.path, await this.app.vault.cachedRead(file));
   }
 
+  /** Call while a note is being edited, before Obsidian saves it; a book note's previews follow the editor after a short pause. */
+  edited(path: string, text: () => string): void {
+    const documentId = this.paths.get(path);
+    if (!documentId) return;
+    window.clearTimeout(this.timers.get(`edit:${path}`));
+    this.timers.set(`edit:${path}`, window.setTimeout(() => {
+      this.timers.delete(`edit:${path}`);
+      if (this.paths.get(path) === documentId) this.read(documentId, path, text());
+    }, 300));
+  }
+
   renamed(file: TFile, oldPath: string): void {
     const documentId = this.paths.get(oldPath);
     if (!documentId) return;
