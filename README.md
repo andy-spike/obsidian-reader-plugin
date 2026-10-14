@@ -45,7 +45,7 @@ Register each new checkout's vault once with **Open folder as vault** in Obsidia
 
 In the command palette, run **Reader Plugin: Check development setup**. You should see a notice confirming that the plugin loaded. Open `Books/Sample book.md` in editing mode, select text, and run **Reader Plugin: Inspect reading context** to verify access to the selection.
 
-Obsidian keeps a loaded plugin in memory. After a successful rebuild, reload it by turning it off and on in **Settings → Community plugins**. If the Obsidian CLI is enabled, reload the main checkout's plugin with:
+Obsidian keeps a loaded plugin in memory. In a development vault, the plugin reloads itself whenever `pnpm build` or `pnpm dev` replaces its files: the build adds a `.dev-reload` marker beside them, and the plugin watches its folder only when that marker is there. Open PDFs stay open at the same page, and your Obsidian window is never raised or focused. The first time, or if a vault has an older build loaded, reload it once by turning it off and on in **Settings → Community plugins**. If the Obsidian CLI is enabled, you can also reload the main checkout's plugin with:
 
 ```sh
 obsidian vault="Reader Plugin Dev - reader-plugin" plugin:reload id=reader-plugin
@@ -60,7 +60,7 @@ Use the matching vault name when checking another checkout. The plugin makes no 
 
 ```sh
 pnpm headless start                    # launch it; other commands also start it when needed
-pnpm build && pnpm headless reload     # load a new build
+pnpm headless reload                   # force a reload; builds already reload it
 pnpm headless eval 'app.workspace.getActiveFile()?.path'
 pnpm headless screenshot /tmp/reader.png
 pnpm headless hover '.reader-popup button'   # real pointer input: tooltips and :hover appear

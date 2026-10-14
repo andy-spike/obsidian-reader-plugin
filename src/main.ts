@@ -1,4 +1,6 @@
-import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, WorkspaceLeaf, WorkspaceSidedock } from "obsidian";
+import { existsSync, watch } from "node:fs";
+import { join } from "node:path";
+import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, FileSystemAdapter, Platform, WorkspaceLeaf, WorkspaceSidedock } from "obsidian";
 
 import { AnnotationStore } from "./annotations";
 import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
@@ -197,7 +199,30 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         return true;
       },
     });
+    this.reloadOnRebuild();
   }
+
+  /**
+   * In a development vault, reloads the plugin whenever a build replaces its files, so every open Obsidian picks up the change without being touched.
+   * The build writes the `.dev-reload` marker there; installed copies don't have it.
+   */
+  private reloadOnRebuild(): void {
+    const adapter = this.app.vault.adapter;
+    if (!Platform.isDesktopApp || !(adapter instanceof FileSystemAdapter) || !this.manifest.dir) return;
+    const folder = join(adapter.getBasePath(), this.manifest.dir);
+    if (!existsSync(join(folder, ".dev-reload"))) return;
+    const plugins = (this.app as unknown as { plugins: { disablePlugin(id: string): Promise<void>; enablePlugin(id: string): Promise<boolean> } }).plugins;
+    const id = this.manifest.id;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // A build copies several files; reload once they have all landed.
+    const watcher = watch(folder, (_, name) => {
+      if (name !== "main.js" && name !== "styles.css" && name !== "manifest.json") return;
+      clearTimeout(timer);
+      timer = setTimeout(() => void plugins.disablePlugin(id).then(() => plugins.enablePlugin(id)), 300);
+    });
+    this.register(() => { clearTimeout(timer); watcher.close(); });
+  }
+
   /** Settings and reading positions share the plugin's data file. */
   private async persist(): Promise<void> {
     clearTimeout(this.positionTimer);
@@ -250,8 +275,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.app.workspace.getLeavesOfType(READER_VIEW).forEach(leaf => (leaf.view as ReaderView).savePosition());
     if (this.positionTimer !== undefined) void this.persist();
     this.store?.dispose();
-    this.app.workspace.detachLeavesOfType(READER_VIEW);
-    this.app.workspace.detachLeavesOfType(ANNOTATIONS_VIEW);
+    // Open reader and sidebar tabs stay where they are; Obsidian restores them when the plugin loads again, such as after an update or a rebuild.
     stopPdfWorker();
   }
 }
