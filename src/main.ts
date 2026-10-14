@@ -1,34 +1,34 @@
 import { existsSync, watch } from "node:fs";
 import { join } from "node:path";
-import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, FileSystemAdapter, Platform, WorkspaceLeaf, WorkspaceSidedock } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, FileSystemAdapter, Platform, WorkspaceLeaf } from "obsidian";
 
 import { ANNOTATION_FOLDER, AnnotationStore, LEGACY_ANNOTATION_FOLDER } from "./annotations";
 import { BookNotes } from "./book-notes";
-import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
+import { BookNoteFollowing } from "./book-note-following";
+import { ObsidianBookNoteWorkspace } from "./book-note-workspace";
+import { ReaderView, READER_VIEW } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
+import { SavedReadingState } from "./reading-state";
 import { stopPdfWorker } from "./pdf-engine";
 import { colorOf, loadSettings, NotePlace, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
 
 export default class ReaderPlugin extends Plugin implements SettingsHost {
+  private saved!: SavedReadingState<ReaderSettings>;
   settings!: ReaderSettings;
   private routing = true;
   private nativeTabs = new WeakMap<WorkspaceLeaf, string>();
   private redirecting = new WeakSet<WorkspaceLeaf>();
-  private reader: ReaderView | null = null;
+  private following!: BookNoteFollowing;
   private store!: AnnotationStore;
-  /** Where each PDF was last read, by vault path, so it reopens there in a new tab or after Obsidian restarts. Oldest first. */
-  private positions = new Map<string, ReadingPosition>();
-  private positionTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Positions recorded here since the last write, kept when another Obsidian changes the data file first. */
-  private unsavedPositions = new Set<string>();
   private settingTab!: ReaderSettingTab;
   private bookNotes!: BookNotes;
   /** Redraws the highlight colors of quotes in book notes. */
   private paintQuotes: (() => void) | null = null;
   async onload(): Promise<void> {
     const data = await this.loadData();
-    this.settings = loadSettings(data);
-    this.positions = loadPositions(data);
+    this.saved = new SavedReadingState(data, { read: () => this.loadData(), write: data => this.saveData(data) }, loadSettings,
+      error => console.error("Reader Plugin: could not save reading state.", error));
+    this.settings = this.saved.settings;
     const store = this.store = new AnnotationStore(this.app.vault.adapter, { folder: this.settings.folder });
     const bookNotes = this.bookNotes = new BookNotes(this.app, store, () => this.settings);
     // Saves made in this window bring the book note up to date; another window's saves are left to that window.
@@ -38,88 +38,15 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.registerEvent(this.app.vault.on("delete", file => bookNotes.deleted(file.path)));
     this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => { if (info.file) bookNotes.edited(info.file.path, () => editor.getValue()); }));
     const workspace = this.app.workspace;
-    const inSidebar = (leaf: WorkspaceLeaf) => leaf.getRoot() === workspace.rightSplit || leaf.getRoot() === workspace.leftSplit;
-    /** Where the book note tab is: the right sidebar, or beside the PDF in the main area. */
-    const placeOf = (leaf: WorkspaceLeaf): NotePlace => inSidebar(leaf) ? "sidebar" : "beside";
-    /**
-     * The tab that shows the active PDF's book note in a place: a note tab, or a placeholder while that PDF has no note yet.
-     * Found again after a restart by its saved state, since a tab not shown yet is still a placeholder itself.
-     */
-    const panelLeaf = (place: NotePlace): WorkspaceLeaf | null => {
-      let found: WorkspaceLeaf | null = workspace.getLeavesOfType(ANNOTATIONS_VIEW).find(leaf => placeOf(leaf) === place) ?? null;
-      if (!found) workspace.iterateAllLeaves(leaf => {
-        const state = leaf.getViewState();
-        if (!found && placeOf(leaf) === place && state.type === "markdown" && bookNotes.isNote(state.state?.file)) found = leaf;
-      });
-      return found;
-    };
-    const refreshPanel = () => workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => { if (leaf.view instanceof AnnotationsView) leaf.view.refresh(); });
-    /** Shows the active PDF's book note, or the placeholder, in a tab. */
-    const fill = async (leaf: WorkspaceLeaf): Promise<void> => {
-      const record = this.reader?.getRecord() ?? null;
-      const file = record ? bookNotes.file(record) : null;
-      const state = leaf.getViewState();
-      if (file) {
-        if (state.type !== "markdown" || state.state?.file !== file.path) await leaf.setViewState({ type: "markdown", state: { file: file.path, mode: "source" }, active: false });
-      } else if (record || state.type === "empty") {
-        if (state.type !== ANNOTATIONS_VIEW) await leaf.setViewState({ type: ANNOTATIONS_VIEW, active: false });
-      }
-    };
-    let panelOpening: Promise<WorkspaceLeaf | null> | null = null;
-    /** Shows the active PDF's book note in the sidebar or beside the PDF, creating that tab if needed. Reveals it when asked. */
-    const showPanel = (reveal: boolean, place: NotePlace = this.settings.notePlace): Promise<WorkspaceLeaf | null> => {
-      const run = async (): Promise<WorkspaceLeaf | null> => {
-        const reader = this.reader;
-        const leaf = panelLeaf(place) ?? (place === "sidebar" ? workspace.getRightLeaf(false) : reader ? workspace.createLeafBySplit(reader.leaf, "vertical") : null);
-        if (!leaf) return null;
-        await fill(leaf);
-        refreshPanel();
-        if (!reveal) return leaf;
-        // revealLeaf brings a background Obsidian window to the front. A reader also loads without the user,
-        // such as when Obsidian restores tabs or the plugin reloads, so then only open a collapsed sidebar.
-        if (leaf.view.containerEl.doc.hasFocus()) await workspace.revealLeaf(leaf);
-        else if (inSidebar(leaf) && (leaf.getRoot() as WorkspaceSidedock).collapsed) (leaf.getRoot() as WorkspaceSidedock).expand();
-        return leaf;
-      };
-      const next = (panelOpening ?? Promise.resolve(null)).catch(() => null).then(run);
-      panelOpening = next;
-      void next.finally(() => { if (panelOpening === next) panelOpening = null; });
-      return next;
-    };
-    /** Switches book note tabs, in the sidebar and beside the PDF, to the active PDF's note, without opening anything. */
-    const updatePanel = () => {
-      for (const place of ["sidebar", "beside"] as const) if (panelLeaf(place)) void showPanel(false, place);
-    };
-    /** Set when the reader closes the panel with the toggle, so opening another PDF doesn't bring it straight back. */
-    let panelDismissed = false;
-    const toggleAnnotations = async (place: NotePlace = this.settings.notePlace): Promise<void> => {
-      const leaf = panelLeaf(place);
-      const sidebar = leaf && inSidebar(leaf);
-      const visible = !!leaf && leaf.view.containerEl.isShown() && !(sidebar && (leaf.getRoot() as WorkspaceSidedock).collapsed);
-      if (!visible) {
-        panelDismissed = false;
-        await showPanel(true, place);
-        return;
-      }
-      panelDismissed = true;
-      // In the sidebar, collapse it like Obsidian's own sidebar toggle; beside the PDF, close the tab.
-      if (sidebar) (leaf.getRoot() as WorkspaceSidedock).collapse();
-      else leaf.detach();
-    };
+    const following = this.following = new BookNoteFollowing(new ObsidianBookNoteWorkspace(this.app, bookNotes), bookNotes, () => this.settings);
+    this.register(() => following.dispose());
+    const reportNoteError = (error: unknown) => new Notice(`Could not show the book note: ${String(error)}`);
+    const toggleAnnotations = (place?: NotePlace) => following.toggle(place).catch(reportNoteError);
     const ready = (reader: ReaderView) => {
-      const record = reader.getRecord();
-      const current = this.reader === reader || workspace.getMostRecentLeaf() === reader.leaf || workspace.getActiveViewOfType(ReaderView) === reader;
-      if (current) this.reader = record ? reader : null;
       paintQuotes();
-      // The note is read first, so the sidebar can tell it is a book note.
-      void (record ? bookNotes.load(record) : Promise.resolve()).then(() => {
-        if (record && (record.annotations.length || !record.exportRetired)) bookNotes.schedule(record);
-        if (!current || this.reader !== reader) return;
-        if (!panelDismissed && this.settings.showAnnotationsOnOpen && record) void showPanel(true);
-        else updatePanel();
-      });
+      void following.ready(reader).catch(reportNoteError);
     };
-    this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, () => this.reader));
+    this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, () => following.current));
     /** Book note quotes take their highlight's color, matched by the highlight ID in the quote's link, without changing the note. */
     const quoteStyle = document.head.createEl("style", { attr: { id: "reader-plugin-quote-colors" } });
     this.register(() => quoteStyle.remove());
@@ -162,11 +89,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       void this.saveSettings();
     };
     const openNote = (reader: ReaderView, annotationId: string | null, place?: NotePlace) => {
-      const record = reader.getRecord();
-      if (!record) return;
-      this.reader = reader;
-      panelDismissed = false;
-      void bookNotes.open(record, annotationId, () => showPanel(true, place)).catch(error => new Notice(`Could not open the book note: ${String(error)}`));
+      void following.open(reader, annotationId, place).catch(reportNoteError);
     };
     this.registerView(READER_VIEW, leaf => new ReaderView(leaf, {
       store, ready, settings: () => this.settings, toggleAnnotations: place => void toggleAnnotations(place),
@@ -177,14 +100,14 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         void this.saveSettings();
       }, openNative: file => void open(file, undefined, true), openNote,
       writing: (record, annotationId) => bookNotes.writing(record, annotationId),
-      lastPosition: path => this.positions.get(path),
-      rememberPosition: (path, position) => this.rememberPosition(path, position),
+      lastPosition: path => this.saved.position(path),
+      rememberPosition: (path, position) => this.saved.remember(path, position),
     }));
     // What you wrote in a book note shows as dots on highlights, so redraw them when it changes.
     // A PDF's first highlight creates its note; the sidebar tab then switches from its placeholder to the note.
     this.register(bookNotes.subscribe(documentId => {
       this.readers().forEach(reader => { if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations(); });
-      if (this.reader?.getRecord()?.documentId === documentId) updatePanel();
+      void following.changed(documentId).catch(reportNoteError);
     }));
     this.addSettingTab(this.settingTab = new ReaderSettingTab(this.app, this));
     // Earlier versions kept records in a visible folder by default; move them to the hidden one once. A chosen folder stays.
@@ -204,7 +127,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       id: native ? "open-native-pdf" : "open-pdf-reader",
       name: native ? "Open PDF in Obsidian's normal viewer" : "Open PDF in Reader",
       callback: () => {
-        const active = this.app.workspace.getActiveFile() ?? this.reader?.file;
+        const active = this.app.workspace.getActiveFile() ?? following.current?.file;
         if (active?.extension === "pdf") void open(active, undefined, native);
         else new PdfPicker(this.app, file => void open(file, undefined, native)).open();
       },
@@ -243,15 +166,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       routePdfs();
       this.readers().forEach(reader => { if (reader.leaf !== leaf) reader.hidePopup(); });
       if (leaf && leaf.view.getViewType() !== "pdf") this.nativeTabs.delete(leaf);
-      // Switching to another PDF switches the sidebar to its note. Writing in a book note keeps that book as the active PDF;
-      // other notes leave the sidebar on the last PDF's note.
       const notePath = leaf?.view instanceof MarkdownView ? leaf.view.file?.path : undefined;
-      const noteReader = notePath ? this.readers().find(reader => reader.getRecord()?.notePath === notePath) : undefined;
-      const reader = noteReader ?? (leaf?.view instanceof ReaderView ? leaf.view : undefined);
-      if (reader && reader !== this.reader) {
-        this.reader = reader;
-        updatePanel();
-      }
+      void following.activate(leaf?.view instanceof ReaderView ? leaf.view : null, notePath).catch(reportNoteError);
     }));
     this.app.workspace.onLayoutReady(routePdfs);
     /** Opens the PDF of a passage link and scrolls to its highlight, or to its page if the highlight was deleted. */
@@ -265,13 +181,9 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         if (annotation && reader) await reader.showAnnotationWhenReady(annotation.id);
       } catch (error) { new Notice(`Could not open annotation: ${String(error)}`); }
     };
-    // A passage link opens its highlight, and a rendered link to a PDF, such as `[[book.pdf#page=2]]`, opens in the Reader at its page,
-    // reusing a Reader that already shows the PDF. Left to Obsidian, it would replace the note's tab with the native viewer, and the page would be lost
-    // when routing swaps in the Reader. Capturing at the document runs before Obsidian's own link handler.
-    /**
-     * The passage address under the pointer: a rendered link's address, or, where the editor shows a link as raw text (as it
-     * does for the block holding the cursor), the passage link at that spot of the line.
-     */
+    // Capture links before Obsidian replaces the note tab with its PDF viewer.
+    // Routing that viewer to Reader would lose the requested page.
+    /** Read a rendered passage link or a raw link in the editor block under the pointer. */
     const passageAt = (target: Element | null): string | null => {
       const rendered = target?.closest?.("a[href^='obsidian://reader-plugin?']");
       if (rendered) return rendered.getAttribute("href");
@@ -286,9 +198,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       }
       return null;
     };
-    // A passage link opens on press, before the editor moves its cursor into the block and redraws the link as raw text, which
-    // Obsidian would then try to open as an empty address. Opening here also avoids handing the obsidian:// address to the
-    // operating system, which may not send it back to this Obsidian.
+    // Handle the press before CodeMirror redraws the link as raw text.
+    // Keep obsidian:// links in this Obsidian instance instead of handing them to the operating system.
     const openPassageLink = (event: MouseEvent) => {
       if (event.button !== 0) return;
       const href = passageAt(event.target as Element | null);
@@ -356,8 +267,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       }
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-      const position = this.positions.get(oldPath);
-      if (position && this.positions.delete(oldPath)) this.rememberPosition(file.path, position);
+      this.saved.rename(oldPath, file.path);
       if (file instanceof TFile) bookNotes.renamed(file, oldPath);
       void store.rename(oldPath, file.path).catch(error => new Notice(`Could not update annotation source: ${error.message}`));
     }));
@@ -411,28 +321,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.register(() => { clearTimeout(timer); watcher.close(); });
   }
 
-  /** Settings and reading positions share the plugin's data file. */
-  private async persist(): Promise<void> {
-    clearTimeout(this.positionTimer);
-    this.positionTimer = undefined;
-    this.unsavedPositions.clear();
-    await this.saveData({ ...this.settings, positions: Object.fromEntries(this.positions) });
-  }
-
-  /** Scrolling reports positions continuously, so writes wait until it pauses. */
-  private rememberPosition(path: string, position: ReadingPosition): void {
-    const previous = this.positions.get(path);
-    this.positions.delete(path);
-    this.positions.set(path, position);
-    while (this.positions.size > MAX_POSITIONS) this.positions.delete(this.positions.keys().next().value!);
-    if (previous && previous.page === position.page && previous.offset === position.offset && previous.zoom === position.zoom) return;
-    this.unsavedPositions.add(path);
-    clearTimeout(this.positionTimer);
-    this.positionTimer = setTimeout(() => void this.persist(), 1000);
-  }
-
   async saveSettings(): Promise<void> {
-    await this.persist();
+    await this.saved.flush();
     this.applySettings();
   }
 
@@ -441,15 +331,9 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
    * so this window's next write doesn't put back the old ones. Positions read here but not yet written still win.
    */
   async onExternalSettingsChange(): Promise<void> {
-    const data = await this.loadData();
-    this.settings = loadSettings(data);
+    await this.saved.reload();
+    this.settings = this.saved.settings;
     this.store.folder = this.settings.folder;
-    const positions = loadPositions(data);
-    for (const path of this.unsavedPositions) {
-      const position = this.positions.get(path);
-      if (position) { positions.delete(path); positions.set(path, position); }
-    }
-    this.positions = positions;
     this.applySettings();
     if (this.settingTab.containerEl.isConnected) this.settingTab.display();
   }
@@ -476,7 +360,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         else await this.app.vault.adapter.rename(source, target);
       });
       this.settings.folder = folder;
-      await this.persist();
+      await this.saved.flush();
       // Remove the previous folder only when the disk shows nothing else lives there.
       // Obsidian's non-recursive rmdir fails on empty folders under current Electron, so check first and remove the empty folder.
       const left = await this.app.vault.adapter.list(from).catch(() => null);
@@ -490,33 +374,17 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
 
   onunload(): void {
     this.routing = false;
-    // Closing the views below records their final positions; write them before the plugin goes away. The cleanup after it
-    // must run even if that fails, or a copy of the plugin stays half-loaded beside the next one.
+    // Flush positions and clean up even if a Reader fails to report its final position.
     try {
       this.readers().forEach(reader => reader.savePosition());
-      if (this.positionTimer !== undefined) void this.persist();
     } catch (error) {
       console.error("Reader Plugin: could not save reading positions while unloading.", error);
     }
+    void this.saved?.close().catch(error => console.error("Reader Plugin: could not save reading state while unloading.", error));
     this.store?.dispose();
     // Open reader and sidebar tabs stay where they are; Obsidian restores them when the plugin loads again, such as after an update or a rebuild.
     stopPdfWorker();
   }
-}
-
-/** Enough for a library; the least recently read books are forgotten first. */
-const MAX_POSITIONS = 200;
-
-function loadPositions(data: unknown): Map<string, ReadingPosition> {
-  const saved = (data as { positions?: unknown } | null)?.positions;
-  const positions = new Map<string, ReadingPosition>();
-  if (!saved || typeof saved !== "object") return positions;
-  for (const [path, value] of Object.entries(saved as Record<string, unknown>)) {
-    const { page, offset, zoom } = (value ?? {}) as Record<string, unknown>;
-    if (typeof page !== "number" || typeof offset !== "number" || !(typeof zoom === "number" || zoom === "width" || zoom === "page")) continue;
-    positions.set(path, { page, offset, zoom });
-  }
-  return positions;
 }
 
 class PdfPicker extends FuzzySuggestModal<TFile> {
