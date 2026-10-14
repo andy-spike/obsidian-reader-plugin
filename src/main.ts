@@ -2,7 +2,7 @@ import { existsSync, watch } from "node:fs";
 import { join } from "node:path";
 import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, FileSystemAdapter, Platform, WorkspaceLeaf, WorkspaceSidedock } from "obsidian";
 
-import { AnnotationStore } from "./annotations";
+import { ANNOTATION_FOLDER, AnnotationStore, LEGACY_ANNOTATION_FOLDER } from "./annotations";
 import { BookNotes } from "./book-notes";
 import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
@@ -178,6 +178,9 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       if (this.reader?.getRecord()?.documentId === documentId) updatePanel();
     }));
     this.addSettingTab(this.settingTab = new ReaderSettingTab(this.app, this));
+    // Earlier versions kept records in a visible folder by default; move them to the hidden one once. A chosen folder stays.
+    if (this.settings.folder === LEGACY_ANNOTATION_FOLDER) workspace.onLayoutReady(() => void this.moveAnnotations(ANNOTATION_FOLDER, moved =>
+      moved ? `Highlight data for ${moved} ${moved === 1 ? "PDF" : "PDFs"} moved to the hidden folder ${ANNOTATION_FOLDER}.` : ""));
     // Saving is silent while it works. Report a failing vault write once, and again when it recovers.
     const failing = new Set<string>();
     this.register(store.subscribe(record => {
@@ -453,10 +456,11 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   }
 
   /** Moves existing records with the file manager, so links to Markdown files that older versions generated follow them. */
-  async moveAnnotations(folder: string): Promise<void> {
+  async moveAnnotations(folder: string, done?: (moved: number) => string): Promise<void> {
     const from = this.store.folder;
     try {
-      if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+      // Through the adapter, which also handles hidden folders that Obsidian doesn't index.
+      if (!await this.app.vault.adapter.exists(folder)) await this.app.vault.adapter.mkdir(folder);
       const moved = await this.store.relocate(folder, async (source, target) => {
         const file = this.app.vault.getAbstractFileByPath(source);
         if (file instanceof TFile) await this.app.fileManager.renameFile(file, target);
@@ -468,7 +472,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       // Obsidian's non-recursive rmdir fails on empty folders under current Electron, so check first and remove the empty folder.
       const left = await this.app.vault.adapter.list(from).catch(() => null);
       if (left && !left.files.length && !left.folders.length) await this.app.vault.adapter.rmdir(from, true).catch(() => {});
-      new Notice(moved ? `Moved annotations for ${moved} ${moved === 1 ? "PDF" : "PDFs"} to ${folder}.` : `Annotations will be saved in ${folder}.`);
+      const message = done ? done(moved) : moved ? `Moved annotations for ${moved} ${moved === 1 ? "PDF" : "PDFs"} to ${folder}.` : `Annotations will be saved in ${folder}.`;
+      if (message) new Notice(message);
     } catch (error) {
       new Notice(`Could not move annotations to ${folder}: ${error instanceof Error ? error.message : String(error)}`);
     }

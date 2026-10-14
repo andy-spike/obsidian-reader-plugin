@@ -191,7 +191,7 @@ export class ReaderSettingTab extends PluginSettingTab {
     });
     new Setting(containerEl)
       .setName("Annotation folder")
-      .setDesc("Where highlight records (JSON) are saved. Changing it moves existing records.")
+      .setDesc("Where the plugin keeps each PDF's highlight positions and colors (JSON). Your writing lives in the book notes. The default, .reader-annotations, is hidden, so it stays out of the file list and search; tools that sync hidden files, such as Git or Syncthing, still copy it, but Obsidian Sync doesn't. Changing it moves existing records.")
       .addText(text => {
         text.setPlaceholder(ANNOTATION_FOLDER).setValue(settings.folder).onChange(value => { pending = value; });
         new FolderSuggest(this.app, text.inputEl, folder => { pending = folder; void commit(text.inputEl); });

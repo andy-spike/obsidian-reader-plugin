@@ -70,6 +70,8 @@ test("version 0.1 names load with the defaults first", () => {
 test("book note settings have defaults and clean paths", () => {
   const defaults = loadSettings(null);
   assert.equal(defaults.notesFolder, "Book notes");
+  assert.equal(defaults.folder, ".reader-annotations");
+  assert.equal(loadSettings({ folder: "Reader annotations" }).folder, "Reader annotations", "kept, so the plugin can move it once");
   assert.equal(defaults.noteTemplate, "");
   assert.equal(defaults.highlightMode, false);
   assert.equal(defaults.showAnnotationsOnOpen, true);

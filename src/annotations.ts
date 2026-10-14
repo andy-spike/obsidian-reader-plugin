@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 
-export const ANNOTATION_FOLDER = "Reader annotations";
+/** A hidden folder: Obsidian leaves it out of the file list, search, and graph. Sync tools that copy hidden files still carry it. */
+export const ANNOTATION_FOLDER = ".reader-annotations";
+/** The visible default of earlier versions. Records there move to the hidden folder once. */
+export const LEGACY_ANNOTATION_FOLDER = "Reader annotations";
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface Annotation {
   id: string;
