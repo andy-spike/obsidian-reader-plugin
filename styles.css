@@ -79,6 +79,7 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 .reader-entry-actions { position: absolute; top: -13px; right: var(--size-4-2); z-index: 4; display: flex; padding: 2px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); box-shadow: var(--shadow-s); opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; --icon-size: var(--icon-xs); }
 .reader-entry:hover .reader-entry-actions, .reader-entry:focus-within .reader-entry-actions { opacity: 1; pointer-events: auto; }
 .reader-entry-actions button:last-child:hover { color: var(--text-error); }
+.reader-menu-swatch { display: inline-block; width: 10px; height: 10px; margin-inline-end: var(--size-4-2); border-radius: 50%; vertical-align: middle; position: relative; top: -1px; background: var(--reader-color); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15); }
 .reader-entry-swatch { display: block; width: 12px; height: 12px; border-radius: 50%; background: var(--reader-color); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15); }
 
 /* ---- Settings and table of contents ---- */

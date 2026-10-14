@@ -14,7 +14,14 @@ export function checkMenu(): Menu {
 
 export function colorMenu(colors: HighlightColor[], current: string, choose: (id: string) => void): Menu {
   const menu = checkMenu();
-  for (const color of colors) menu.addItem(item => item.setTitle(color.name).setChecked(color.id === current).onClick(() => choose(color.id)));
+  for (const color of colors) {
+    // A dot in the color before its name, so each choice shows what it looks like.
+    const title = createFragment(fragment => {
+      fragment.createSpan({ cls: "reader-menu-swatch" }).style.setProperty("--reader-color", color.value);
+      fragment.appendText(color.name);
+    });
+    menu.addItem(item => item.setTitle(title).setChecked(color.id === current).onClick(() => choose(color.id)));
+  }
   return menu;
 }
 
