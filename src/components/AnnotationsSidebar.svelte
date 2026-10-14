@@ -77,13 +77,13 @@
                 {#if !comment && editing !== annotation.id}
                   <IconButton icon="message-square-plus" label="Add comment" onclick={() => (editing = annotation.id)} />
                 {/if}
-                <IconButton icon="trash-2" label="Delete highlight" onclick={() => view.record && deleteAnnotation(store, view.record, annotation)} />
+                <IconButton icon="trash-2" label="Delete highlight" onclick={() => view.record && deleteAnnotation(store, view.record, annotation, view.reader)} />
               </div>
               {#if editing === annotation.id}
                 <textarea
                   class="reader-comment-editor" placeholder="Write a comment…" rows="1" value={comment}
                   oninput={event => { annotation.comment = event.currentTarget.value; save(); }}
-                  onkeydown={event => { if (event.key === "Escape") { event.preventDefault(); event.currentTarget.blur(); } }}
+                  onkeydown={event => { if (event.key === "Escape" || (event.key === "Enter" && !event.shiftKey && !event.isComposing)) { event.preventDefault(); event.currentTarget.blur(); } }}
                   onblur={() => { if (editing === annotation.id) editing = null; }}
                   {@attach focusAtEnd}
                 ></textarea>

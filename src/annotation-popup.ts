@@ -31,8 +31,10 @@ export class AnnotationPopup {
     this.card = mount(Card, { target: this.el });
     // Buttons must not take focus away from the text selection they act on.
     this.el.addEventListener("mousedown", event => { if ((event.target as HTMLElement).closest("button")) event.preventDefault(); });
+    // Enter finishes a comment, which saves as it is typed; Shift+Enter starts a new line. Enter on a button still presses it.
     this.el.addEventListener("keydown", event => {
-      if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) {
+      const finish = event.key === "Enter" && !event.shiftKey && !event.isComposing && event.target instanceof HTMLTextAreaElement;
+      if (event.key === "Escape" || finish) {
         event.preventDefault();
         event.stopPropagation();
         this.hide();
