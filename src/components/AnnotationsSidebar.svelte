@@ -77,7 +77,7 @@
                 {#if !comment && editing !== annotation.id}
                   <IconButton icon="message-square-plus" label="Add comment" onclick={() => (editing = annotation.id)} />
                 {/if}
-                <IconButton icon="trash-2" label="Delete highlight" onclick={() => view.record && deleteAnnotation(store, view.record, annotation, view.reader)} />
+                <IconButton icon="trash-2" label="Delete highlight" onclick={() => view.record && deleteAnnotation(store, view.record, annotation)} />
               </div>
               {#if editing === annotation.id}
                 <textarea

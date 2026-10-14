@@ -8,11 +8,8 @@ export function colorMenu(colors: HighlightColor[], current: string, choose: (id
   return menu;
 }
 
-/** Shows a short message in a Reader tab, with an optional action. */
-export interface Toaster { toast(message: string, action?: { label: string; run: () => void }): void }
-
-/** Deletes immediately and offers a short undo window instead of asking for confirmation. The undo appears in the given Reader, or as an Obsidian notice without one. */
-export function deleteAnnotation(store: AnnotationStore, record: AnnotationRecord, annotation: Annotation, reader?: Toaster | null): void {
+/** Deletes immediately and offers a short undo window, in an Obsidian notice, instead of asking for confirmation. */
+export function deleteAnnotation(store: AnnotationStore, record: AnnotationRecord, annotation: Annotation): void {
   const index = record.annotations.indexOf(annotation);
   if (index < 0) return;
   record.annotations.splice(index, 1);
@@ -22,10 +19,6 @@ export function deleteAnnotation(store: AnnotationStore, record: AnnotationRecor
     record.annotations.splice(Math.min(index, record.annotations.length), 0, annotation);
     void store.save(record).catch(() => {});
   };
-  if (reader) {
-    reader.toast("Highlight deleted.", { label: "Undo", run: restore });
-    return;
-  }
   const message = createFragment();
   message.createSpan({ text: "Highlight deleted. " });
   const undo = message.createEl("a", { text: "Undo", href: "#" });

@@ -4,7 +4,7 @@ import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, ReaderSettings } from "./settings";
-import { deleteAnnotation, type Toaster } from "./ui";
+import { deleteAnnotation } from "./ui";
 import { OutlineModal } from "./outline-modal";
 import type { OutlineNode } from "./components/OutlineTree.svelte";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
@@ -52,7 +52,7 @@ export interface ReaderHost {
   rememberPosition(path: string, position: ReadingPosition): void;
 }
 
-export class ReaderView extends FileView implements Toaster {
+export class ReaderView extends FileView {
   private pdf: PDFDocumentProxy | null = null;
   private loading: PDFDocumentLoadingTask | null = null;
   private record: AnnotationRecord | null = null;
@@ -557,10 +557,10 @@ export class ReaderView extends FileView implements Toaster {
   }
 
   /**
-   * Shows a short message just above the page and zoom bar, where the reader is already looking, instead of in Obsidian's notice corner.
-   * A new message replaces the current one. It stays while the pointer is over it, so an action such as Undo can be reached.
+   * Shows a short confirmation just above the page and zoom bar, where the reader is already looking, instead of in Obsidian's notice corner.
+   * A new message replaces the current one, and it stays while the pointer is over it.
    */
-  toast(message: string, action?: { label: string; run: () => void }): void {
+  toast(message: string): void {
     this.toastEl?.remove();
     window.clearTimeout(this.toastTimer);
     const el = this.toastEl = this.contentEl.createDiv({ cls: "reader-toast", attr: { role: "status" } });
@@ -570,8 +570,7 @@ export class ReaderView extends FileView implements Toaster {
       el.remove();
       if (this.toastEl === el) this.toastEl = null;
     };
-    if (action) el.createEl("button", { cls: "reader-toast-action", text: action.label }).addEventListener("click", () => { action.run(); close(); });
-    const arm = () => { this.toastTimer = window.setTimeout(close, action ? 6000 : 2500); };
+    const arm = () => { this.toastTimer = window.setTimeout(close, 2500); };
     el.addEventListener("pointerenter", () => window.clearTimeout(this.toastTimer));
     el.addEventListener("pointerleave", arm);
     arm();
@@ -761,7 +760,7 @@ export class ReaderView extends FileView implements Toaster {
       copy: () => this.copy(annotation.quote.exact),
       remove: () => {
         this.popup.hide();
-        if (this.record) deleteAnnotation(this.host.store, this.record, annotation, this);
+        if (this.record) deleteAnnotation(this.host.store, this.record, annotation);
       },
     }, focusComment);
   }
