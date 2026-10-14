@@ -36,7 +36,13 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         if (!leaf) return;
         if (!existing) await leaf.setViewState({ type: ANNOTATIONS_VIEW, active: false });
         refreshSidebar();
-        await this.app.workspace.revealLeaf(leaf);
+        // revealLeaf brings a background Obsidian window to the front. A reader also loads without the user,
+        // such as when Obsidian restores tabs or the plugin reloads, so then only open a collapsed sidebar.
+        if (leaf.view.containerEl.doc.hasFocus()) await this.app.workspace.revealLeaf(leaf);
+        else {
+          const root = leaf.getRoot();
+          if ((root === this.app.workspace.rightSplit || root === this.app.workspace.leftSplit) && (root as WorkspaceSidedock).collapsed) (root as WorkspaceSidedock).expand();
+        }
       })().finally(() => { sidebarOpening = null; });
       return sidebarOpening;
     };
