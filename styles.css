@@ -16,7 +16,6 @@
 @keyframes reader-toast-in { from { opacity: 0; transform: translate(-50%, 4px); } }
 /* Highlight mode's header button stays lit in the mode's color while the mode is on. */
 .view-action.reader-mode-action.is-active { color: var(--reader-mode-color, var(--interactive-accent)); background: var(--background-modifier-hover); }
-.reader-zoom-controls { display: flex; align-items: center; gap: 2px; }
 .reader-controls-divider { width: 1px; height: 18px; margin: 0 6px; background: var(--background-modifier-border); }
 .reader-view button.reader-icon-button, .reader-annotations button.reader-icon-button { height: auto; padding: var(--size-2-2); background: transparent; box-shadow: none; }
 .reader-view button.reader-icon-button:disabled, .reader-annotations button.reader-icon-button:disabled { opacity: 0.35; cursor: default; background: transparent; }

@@ -40,10 +40,8 @@
   <span class="reader-page-total">{current.total ? `/ ${current.total}` : ""}</span>
   <IconButton icon="chevron-down" label="Next page" disabled={!current.total || current.page >= current.total} onclick={() => step(1)} />
   <div class="reader-controls-divider"></div>
-  <div class="reader-zoom-controls">
-    <IconButton icon="minus" label="Zoom out (-)" disabled={!current.canZoomOut} onclick={() => zoomBy(-1)} />
-    <button type="button" class="reader-zoom-level" onclick={event => zoomMenu(event.currentTarget.parentElement!.getBoundingClientRect())} {@attach tooltip("Zoom options")}>{Math.round(current.zoom * 100)}%</button>
-    <IconButton icon="plus" label="Zoom in (+)" disabled={!current.canZoomIn} onclick={() => zoomBy(1)} />
-    <IconButton icon="rotate-ccw" label="Reset zoom to fit width (0)" disabled={current.fitWidth} onclick={reset} />
-  </div>
+  <IconButton icon="minus" label="Zoom out (-)" disabled={!current.canZoomOut} onclick={() => zoomBy(-1)} />
+  <button type="button" class="reader-zoom-level" onclick={event => zoomMenu(event.currentTarget.getBoundingClientRect())} {@attach tooltip("Zoom options")}>{Math.round(current.zoom * 100)}%</button>
+  <IconButton icon="plus" label="Zoom in (+)" disabled={!current.canZoomIn} onclick={() => zoomBy(1)} />
+  <IconButton icon="rotate-ccw" label="Reset zoom to fit width (0)" disabled={current.fitWidth} onclick={reset} />
 </div>

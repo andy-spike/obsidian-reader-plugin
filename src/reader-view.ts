@@ -191,8 +191,8 @@ export class ReaderView extends FileView {
         option("Fit page", this.fit === "page", () => this.setZoom(this.fitZoom("page"), "page"));
         menu.addSeparator();
         for (const zoom of ZOOM_PRESETS) option(`${Math.round(zoom * 100)}%`, !this.fit && Math.abs(this.zoom - zoom) < 0.005, () => this.setZoom(zoom, null));
-        // Anchored just above the zoom controls: the bar sits at the bottom, so Obsidian flips the menu to open upward from
-        // here. Obsidian lines the menu up with the left edge, so it is then moved to sit centered over the zoom controls.
+        // Anchored just above the zoom level: the bar sits at the bottom, so Obsidian flips the menu to open upward from
+        // here. Obsidian lines the menu up with the left edge, so it is then moved to sit centered over the zoom level.
         const doc = this.contentEl.ownerDocument;
         doc.querySelectorAll(".tooltip").forEach(tip => tip.remove());
         menu.showAtPosition({ x: rect.left, y: rect.top - 6, width: rect.width, overlap: true }, doc);
