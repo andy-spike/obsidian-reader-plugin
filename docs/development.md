@@ -23,7 +23,11 @@ The plugin's own interface, including the highlight popup and the page and zoom 
 
 The vault lives at `.dev-vault/Reader Plugin Dev - <checkout-directory>/`. On main, the vault name is `Reader Plugin Dev - reader-plugin`. A checkout in a directory named `book-search` gets `Reader Plugin Dev - book-search`. Each vault has an original sample book and a reading note. Setup creates missing files and preserves existing notes and settings. To update existing fixture content, edit the note directly or create a fresh disposable vault.
 
-Register each new checkout's vault once. In Obsidian, choose **Open folder as vault** and select the printed vault directory. The main checkout's vault was registered during setup. After registration, `pnpm dev:open` on Linux opens the vault through an `obsidian://` URI. On another OS, open the vault through Obsidian's vault manager. If Obsidian asks to trust the development vault, enable community plugins there. Reader Plugin is already listed as enabled in its local config.
+Run `npm run dev:open` or `pnpm dev:open` from the checkout you want to test. The command prepares that checkout's vault and opens it in Obsidian using its absolute vault path. It uses the system URI opener on Linux, macOS, and Windows. If Obsidian asks to trust the development vault, enable community plugins there. Reader Plugin is already listed as enabled in its local config.
+
+Setup also copies `Books/AI Engineering.pdf` from the main checkout's development vault into each worktree's vault. Git's common directory locates the main checkout, so this works with T3's worktree paths. The PDF stays outside Git. Each worktree receives an independent copy, and repeated setup preserves any existing copy. If the source is missing, setup prints its expected path and continues with the sample book. Put the PDF there and rerun `pnpm dev:setup` to copy it.
+
+Edit plugin source in the worktree and run `pnpm dev` to deploy rebuilds into its vault. Books, annotations, settings, and reading state belong to that vault. They are ignored by Git and do not merge back to main; commit reusable fixtures in `scripts/dev-vault.mjs` and plugin changes in the source. Keep a worktree if you want to keep its local reading data.
 
 ## Checking the setup
 
@@ -81,7 +85,7 @@ Agents should commit each completed unit of work, such as a verified fix or a fi
 
 ## Worktrees
 
-Agents do task work in T3 worktrees based on local `main`. See [the worktree workflow](worktrees.md). T3's **Worktree setup** script runs `pnpm worktree:setup`. It installs from the frozen lockfile and builds the checkout's own development vault. Start the **Dev watcher** script (`pnpm dev`) from T3 when you want rebuilds on save. Register each checkout's vault in Obsidian once before using `pnpm dev:open` there.
+Agents do task work in T3 worktrees based on local `main`. See [the worktree workflow](worktrees.md). T3's **Worktree setup** script runs `pnpm worktree:setup`. It installs from the frozen lockfile and builds the checkout's own development vault. Start the **Dev watcher** script (`pnpm dev`) from T3 when you want rebuilds on save. Run `npm run dev:open` from that checkout to open its vault.
 
 ## References
 

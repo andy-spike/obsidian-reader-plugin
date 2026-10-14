@@ -2,6 +2,8 @@ import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { seedDevelopmentBook } from "./dev-book.mjs";
+
 import { samplePdf } from "./sample-pdf.mjs";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,6 +29,7 @@ export async function setupVault() {
   await seed("Books/Sample reading book.pdf", samplePdf());
   await seed("Books/Sample book.md", "---\ntitle: Sample book\nauthor: Development fixture\n---\n\n# Sample book\n\n## Chapter 1\n\nA reader stops at a passage and writes a question in the margin. The question connects the author's argument to an experience from the reader's own life.\n\n## Chapter 2\n\nGood reading notes preserve the passage, its location, and the reader's interpretation. A citation should bring the reader back to the evidence.\n");
   await seed("Notes/Sample reading note.md", "# Sample reading note\n\nSource: [[Books/Sample book#Chapter 2]]\n\nQuestion: How do source locations make reading notes useful?\n\nThis fixture is original development text.\n");
+  await seedDevelopmentBook(root, vaultPath);
   return vaultPath;
 }
 
