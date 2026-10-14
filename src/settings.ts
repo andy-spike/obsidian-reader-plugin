@@ -4,7 +4,13 @@ import { ANNOTATION_FOLDER } from "./annotations";
 export interface HighlightColor { id: string; name: string; value: string }
 export interface ReaderSettings { colors: HighlightColor[]; folder: string }
 
+/** New installs start with two colors; more can be added in settings. The IDs match the earlier yellow and blue defaults, so their highlights keep a color. */
 const DEFAULT_COLORS: HighlightColor[] = [
+  { id: "yellow", name: "Primary", value: "#f5d94d" },
+  { id: "blue", name: "Secondary", value: "#72a9ea" },
+];
+/** Version 0.1 had four fixed colors and stored only their names. */
+const LEGACY_COLORS: HighlightColor[] = [
   { id: "yellow", name: "Yellow", value: "#f5d94d" },
   { id: "green", name: "Green", value: "#70ca8a" },
   { id: "blue", name: "Blue", value: "#72a9ea" },
@@ -21,8 +27,7 @@ export function loadSettings(saved: unknown): ReaderSettings {
   const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown> };
   const colors = Array.isArray(data.colors)
     ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
-    // Version 0.1 stored only names for the four built-in colors.
-    : DEFAULT_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name }));
+    : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
   const folder = typeof data.folder === "string" ? cleanFolder(data.folder) : null;
   return { colors: colors.length ? colors : DEFAULT_COLORS.map(color => ({ ...color })), folder: folder ?? ANNOTATION_FOLDER };
 }
@@ -48,7 +53,7 @@ export class ReaderSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl).setName("Highlight colors").setHeading()
-      .setDesc("Colors appear in the selection popup in this order. Give each one a meaning, such as “Key idea” or “Question”.");
+      .setDesc("Colors appear in the selection popup in this order. You start with a primary and a secondary color; add more here. Give each one a meaning, such as “Key idea” or “Question”.");
     settings.colors.forEach((color, index) => {
       const row = new Setting(containerEl)
         .addColorPicker(picker => picker.setValue(color.value).onChange(async value => {

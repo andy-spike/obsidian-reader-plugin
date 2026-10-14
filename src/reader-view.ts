@@ -63,7 +63,7 @@ export class ReaderView extends FileView {
   private frame = 0;
   private passages: Passage[] = [];
   private lastColor = "";
-  private pointer = { x: 0, y: 0, down: false };
+  private pointer = { x: 0, y: 0, down: false, dismissed: false };
   private hovered: string | null = null;
   private flashing: string | null = null;
   private stage!: HTMLElement;
@@ -561,8 +561,9 @@ export class ReaderView extends FileView {
     const doc = this.contentEl.ownerDocument;
     this.registerDomEvent(this.stage, "pointerdown", event => {
       if (event.button !== 0 || this.popup.contains(event.target as Node)) return;
-      this.pointer = { x: event.clientX, y: event.clientY, down: true };
-      this.popup.hide();
+      // A click away from a selection popup only dismisses it; it does not also open a highlight's popup.
+      this.pointer = { x: event.clientX, y: event.clientY, down: true, dismissed: this.popup.mode === "selection" };
+      this.dismissPopup();
       (event.target as HTMLElement).closest(".textLayer")?.addClass("selecting");
     });
     this.registerDomEvent(doc, "pointerup", event => {
@@ -573,13 +574,13 @@ export class ReaderView extends FileView {
       if (this.passages.length) {
         const bounds = doc.getSelection()!.getRangeAt(0).getBoundingClientRect();
         this.showSelectionPopup({ clientX: event.clientX, top: event.clientY, bottom: event.clientY, above: event.clientY < bounds.top + bounds.height / 2 });
-      } else if (Math.hypot(event.clientX - this.pointer.x, event.clientY - this.pointer.y) < 4) {
+      } else if (!this.pointer.dismissed && Math.hypot(event.clientX - this.pointer.x, event.clientY - this.pointer.y) < 4) {
         const hit = this.annotationAt(event.clientX, event.clientY);
         if (hit) this.showAnnotationPopup(hit.annotation, this.anchorFor(hit.annotation, event.clientX), false);
       }
     });
     this.registerDomEvent(doc, "pointerdown", event => {
-      if (this.popup.open && !this.popup.contains(event.target as Node) && !this.stage.contains(event.target as Node)) this.popup.hide();
+      if (this.popup.open && !this.popup.contains(event.target as Node) && !this.stage.contains(event.target as Node)) this.dismissPopup();
     });
     this.registerDomEvent(doc, "selectionchange", () => {
       if (this.pointer.down) {
@@ -603,8 +604,7 @@ export class ReaderView extends FileView {
     });
     this.registerDomEvent(doc, "keydown", event => {
       if (event.key !== "Escape" || !this.popup.open || this.app.workspace.getActiveViewOfType(ReaderView) !== this) return;
-      if (this.popup.mode === "selection") doc.getSelection()?.removeAllRanges();
-      this.popup.hide();
+      this.dismissPopup();
     });
     let hoverFrame = 0;
     this.registerDomEvent(this.stage, "pointermove", event => {
@@ -615,6 +615,15 @@ export class ReaderView extends FileView {
       });
     });
     this.registerDomEvent(this.stage, "pointerleave", () => this.setHovered(null));
+  }
+
+  /** Closes the popup. A selection popup also clears its selection, which Obsidian's unselectable UI would otherwise keep. */
+  private dismissPopup(): void {
+    if (this.popup.mode === "selection") {
+      this.passages = [];
+      this.contentEl.ownerDocument.getSelection()?.removeAllRanges();
+    }
+    this.popup.hide();
   }
 
   /** Converts the DOM selection into one passage per page it touches. */
