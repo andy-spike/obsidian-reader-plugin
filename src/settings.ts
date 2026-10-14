@@ -187,7 +187,7 @@ export class ReaderSettingTab extends PluginSettingTab {
     });
     new Setting(containerEl)
       .setName("Annotation folder")
-      .setDesc("Where highlight records (JSON) and their Markdown notes are saved. Changing it moves existing annotation files.")
+      .setDesc("Where highlight records (JSON) are saved. Changing it moves existing records.")
       .addText(text => {
         text.setPlaceholder(ANNOTATION_FOLDER).setValue(settings.folder).onChange(value => { pending = value; });
         new FolderSuggest(this.app, text.inputEl, folder => { pending = folder; void commit(text.inputEl); });

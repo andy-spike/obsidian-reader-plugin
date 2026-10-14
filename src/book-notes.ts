@@ -1,10 +1,13 @@
-import { App, MarkdownView, normalizePath, TFile, WorkspaceLeaf } from "obsidian";
+import { App, MarkdownView, normalizePath, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type { Annotation, AnnotationRecord, AnnotationStore } from "./annotations";
-import { defaultNoteHeader, fillTemplate, findSections, insertSection, noteFileName, quoteText, removeSection, type SectionInput } from "./book-note";
+import { defaultNoteHeader, fillTemplate, findSections, insertSection, noteFileName, placeComments, placedComments, quoteText, removeSection, type MovedComment, type SectionInput } from "./book-note";
 import type { ReaderSettings } from "./settings";
 
 const localDate = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; };
 const byPosition = (a: Annotation, b: Annotation) => a.page - b.page || a.position.start - b.position.start;
+/** Comments still in the record from before book notes, in reading order. */
+const comments = (record: AnnotationRecord): MovedComment[] =>
+  [...record.annotations].sort(byPosition).filter(annotation => annotation.comment.trim()).map(annotation => ({ id: annotation.id, comment: annotation.comment }));
 
 /**
  * Keeps each PDF's book note in step with its highlights. The note belongs to the reader: this class creates it, adds a
@@ -118,16 +121,45 @@ export class BookNotes {
 
   private async update(record: AnnotationRecord): Promise<TFile | null> {
     let file = this.file(record);
-    if (!file && !record.annotations.length) return null;
-    if (!file) file = await this.create(record);
-    else await this.app.vault.process(file, text => this.reconcile(text, record, file!.path));
-    this.read(record.documentId, file.path, await this.app.vault.read(file));
-    this.quotes.set(record.documentId, new Map(record.annotations.map(annotation => [annotation.id, quoteText(annotation.quote.exact)])));
-    if (record.notePath !== file.path) {
-      record.notePath = file.path;
-      await this.store.save(record);
+    if (file) await this.app.vault.process(file, text => this.reconcile(text, record, file!.path));
+    else if (record.annotations.length) file = await this.create(record);
+    let changed = false;
+    if (file) {
+      const text = await this.app.vault.read(file);
+      this.read(record.documentId, file.path, text);
+      this.quotes.set(record.documentId, new Map(record.annotations.map(annotation => [annotation.id, quoteText(annotation.quote.exact)])));
+      // Comments from before book notes are cleared from the record only once the note on disk holds them.
+      const placed = placedComments(text, comments(record));
+      for (const annotation of record.annotations) if (placed.has(annotation.id)) { annotation.comment = ""; changed = true; }
+      if (record.notePath !== file.path) { record.notePath = file.path; changed = true; }
     }
+    if (!record.exportRetired && !comments(record).length) {
+      await this.retireExport(record);
+      record.exportRetired = true;
+      changed = true;
+    }
+    if (changed) await this.store.save(record);
     return file;
+  }
+
+  /**
+   * Before book notes, the plugin wrote a Markdown file of passages and comments next to each record. The book note replaces
+   * it, so it goes to the trash, unless a note links to it; then it stays and a notice says so.
+   */
+  private async retireExport(record: AnnotationRecord): Promise<void> {
+    const path = normalizePath(`${this.store.folder}/${record.documentId}.md`);
+    const old = this.app.vault.getAbstractFileByPath(path);
+    if (!(old instanceof TFile)) return;
+    // Links to it contain its name, the document ID. Passage links in book notes contain `document=<ID>` and don't count.
+    // Reading notes doesn't depend on Obsidian's link index, which may still be building at startup.
+    const mention = new RegExp(`(?<!document=)${record.documentId}`);
+    for (const note of this.app.vault.getMarkdownFiles()) {
+      if (note.path !== path && mention.test(await this.app.vault.cachedRead(note))) {
+        new Notice(`Kept ${path}, the old annotation file for ${record.sourcePath.split("/").pop()}, because other notes link to it. Its passages and comments are now in the book note.`, 10000);
+        return;
+      }
+    }
+    await this.app.fileManager.trashFile(old);
   }
 
   private input(record: AnnotationRecord, annotation: Annotation, notePath: string): SectionInput {
@@ -157,7 +189,7 @@ export class BookNotes {
       }) ?? null;
       text = insertSection(text, this.input(record, annotation, notePath), later);
     }
-    return text;
+    return placeComments(text, comments(record));
   }
 
   private async create(record: AnnotationRecord): Promise<TFile> {

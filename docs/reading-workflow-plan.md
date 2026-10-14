@@ -15,7 +15,7 @@ This document records the product interviews, latest product decisions, architec
 - Each highlight has one highlight category: a color whose meaning the user sets in settings. Tags are deferred.
 - An Annotations panel in the sidebar lists the open document's highlights in reading order. It jumps to passages, previews what the user wrote about each passage in the book note, and lets the user undo a deletion.
 - The annotation record is authoritative. It is a documented JSON format with W3C-style selectors (quote with context, text position, EPUB CFI or PDF page location) stored in a vault folder, so it syncs with the vault.
-- The annotation file is regenerated in full from the record. Every highlight has a block ID, so the user's own notes can link to it. Each document has a book note the user owns, with a quote section per highlight; all writing about a passage goes under its quote there, and the plugin never edits that writing.
+- Every highlight's section in the book note has a block ID, so the user's other notes can link to it or embed it. Each document has a book note the user owns, with a quote section per highlight; all writing about a passage goes under its quote there, and the plugin never edits that writing.
 - Each source document has a stable ID, its last-known path, and a content fingerprint. Renames inside Obsidian update the path, and the fingerprint reconnects files moved outside Obsidian. Moving annotations to a different edition requires the user's confirmation.
 - The plugin tracks both the current location and the furthest point read. The user can reset the furthest point read.
 
@@ -64,7 +64,7 @@ An initial [live prototype](./research/book-context-prototype.md) completed thes
 
 - A 500-page EPUB or text PDF opens within 2 seconds.
 - Indexing runs in the background without freezing Obsidian. Keyword search is ready within about 30 seconds, and embeddings within a few minutes.
-- A new highlight appears in the annotation file within 1 second.
+- A new highlight appears in the book note within 1 second.
 - Every citation in an answer opens the cited passage, and that passage supports the associated claim.
 - Both assistant CLIs answer passage questions, comparisons between chapters, and questions about the whole source document using evidence supplied by document tools. Broad answers disclose incomplete coverage.
 - Spoiler-safe mode never returns text past the furthest point read.

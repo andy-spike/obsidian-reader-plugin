@@ -7,7 +7,7 @@ import { BookNotes } from "./book-notes";
 import { ReaderView, READER_VIEW, type ReadingPosition } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
 import { stopPdfWorker } from "./pdf-engine";
-import { colorOf, loadSettings, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
+import { loadSettings, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
 
 export default class ReaderPlugin extends Plugin implements SettingsHost {
   settings!: ReaderSettings;
@@ -27,7 +27,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     const data = await this.loadData();
     this.settings = loadSettings(data);
     this.positions = loadPositions(data);
-    const store = this.store = new AnnotationStore(this.app.vault.adapter, { folder: this.settings.folder, colorName: id => colorOf(this.settings, id).name });
+    const store = this.store = new AnnotationStore(this.app.vault.adapter, { folder: this.settings.folder });
     const bookNotes = this.bookNotes = new BookNotes(this.app, store, () => this.settings);
     // Saves made in this window bring the book note up to date; another window's saves are left to that window.
     this.register(store.subscribe(record => bookNotes.schedule(record)));
@@ -74,7 +74,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     };
     const ready = (reader: ReaderView) => {
       const record = reader.getRecord();
-      if (record) void bookNotes.load(record).then(() => { if (record.annotations.length) bookNotes.schedule(record); });
+      if (record) void bookNotes.load(record).then(() => { if (record.annotations.length || !record.exportRetired) bookNotes.schedule(record); });
       const noteActive = !!record?.notePath && this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path === record.notePath;
       if (this.reader === reader || this.app.workspace.getMostRecentLeaf() === reader.leaf || this.app.workspace.getActiveViewOfType(ReaderView) === reader || noteActive) {
         this.reader = reader.getRecord() ? reader : null;
@@ -340,7 +340,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
   }
 
-  /** Moves existing records with the file manager, so links to the Markdown exports follow them. */
+  /** Moves existing records with the file manager, so links to Markdown files that older versions generated follow them. */
   async moveAnnotations(folder: string): Promise<void> {
     const from = this.store.folder;
     try {

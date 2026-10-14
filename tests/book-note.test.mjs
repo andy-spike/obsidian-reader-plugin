@@ -103,3 +103,14 @@ test("a section's quote reads back as written, so an edit to it can be noticed",
   const edited = note.findSections(text.replace("> second line", "> second line, my edit"))[0];
   assert.notEqual(note.quoteText(edited.quote), note.quoteText(quote));
 });
+
+test("comments move under their quotes once, and only placed ones count", () => {
+  let text = note.insertSection(header, input("a1", 1), null);
+  text = note.insertSection(text, input("a2", 2), null);
+  text = text.replace("^a2\n", "^a2\n\nAlready written.\n");
+  const comments = [{ id: "a1", comment: "First\r\nsecond line" }, { id: "a2", comment: "A later thought" }, { id: "gone", comment: "No section" }];
+  text = note.placeComments(text, comments);
+  assert.deepEqual(note.findSections(text).map(section => section.writing), ["First\nsecond line", "Already written.\n\nA later thought"]);
+  assert.equal(note.placeComments(text, comments), text);
+  assert.deepEqual([...note.placedComments(text, comments)].sort(), ["a1", "a2"]);
+});

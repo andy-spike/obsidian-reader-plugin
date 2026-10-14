@@ -141,6 +141,28 @@ export function appendWriting(text: string, section: Section, writing: string): 
   return finish(lines);
 }
 
+/** Comments from before book notes, to place under their passages' quotes. */
+export interface MovedComment { id: string; comment: string }
+
+/** Adds each comment under its section, unless that section already holds it, as after an interrupted move. */
+export function placeComments(text: string, comments: MovedComment[]): string {
+  for (const { id, comment } of comments) {
+    const section = findSections(text).find(candidate => candidate.id === id);
+    if (section && !hasComment(section.writing, comment)) text = appendWriting(text, section, comment);
+  }
+  return text;
+}
+
+/** IDs of the comments that the note holds under their passages, so they can safely be cleared from the record. */
+export function placedComments(text: string, comments: MovedComment[]): Set<string> {
+  const sections = findSections(text);
+  return new Set(comments.filter(({ id, comment }) => sections.some(section => section.id === id && hasComment(section.writing, comment))).map(({ id }) => id));
+}
+
+function hasComment(writing: string, comment: string): boolean {
+  return writing.includes(comment.replace(/\r\n?/g, "\n").trim());
+}
+
 /** Characters Obsidian does not allow in file names, or that break links. */
 export function noteFileName(title: string): string {
   return title.replace(/[\\/:*?"<>|#^[\]]/g, "-").replace(/\s+/g, " ").trim() || "Untitled";
