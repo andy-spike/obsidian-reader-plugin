@@ -71,7 +71,7 @@ pnpm headless type 'a comment'
 pnpm headless stop
 ```
 
-Add `--window=Settings` to drive the settings window, which Obsidian opens separately. The headless Obsidian and your own Obsidian open the same vault folder, so they share its `.obsidian/workspace.json` and plugin data. Close the development vault in your own Obsidian while headless checks run, or expect each to pick up the other's last layout and settings.
+Add `--window=Settings` to drive the settings window, which Obsidian opens separately. The headless Obsidian and your own Obsidian open the same vault folder. Reader Plugin's settings and reading positions follow each other's changes, but both write the vault's `.obsidian/workspace.json`, so each may pick up the other's last tab layout. Close the development vault in your own Obsidian while headless checks run if that gets in the way.
 
 ## Commits
 

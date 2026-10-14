@@ -18,6 +18,9 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   /** Where each PDF was last read, by vault path, so it reopens there in a new tab or after Obsidian restarts. Oldest first. */
   private positions = new Map<string, ReadingPosition>();
   private positionTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Positions recorded here since the last write, kept when another Obsidian changes the data file first. */
+  private unsavedPositions = new Set<string>();
+  private settingTab!: ReaderSettingTab;
   async onload(): Promise<void> {
     const data = await this.loadData();
     this.settings = loadSettings(data);
@@ -74,7 +77,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       lastPosition: path => this.positions.get(path),
       rememberPosition: (path, position) => this.rememberPosition(path, position),
     }));
-    this.addSettingTab(new ReaderSettingTab(this.app, this));
+    this.addSettingTab(this.settingTab = new ReaderSettingTab(this.app, this));
     // Saving is silent while it works. Report a failing vault write once, and again when it recovers.
     const failing = new Set<string>();
     this.register(store.subscribe(record => {
@@ -227,6 +230,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   private async persist(): Promise<void> {
     clearTimeout(this.positionTimer);
     this.positionTimer = undefined;
+    this.unsavedPositions.clear();
     await this.saveData({ ...this.settings, positions: Object.fromEntries(this.positions) });
   }
 
@@ -237,12 +241,35 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.positions.set(path, position);
     while (this.positions.size > MAX_POSITIONS) this.positions.delete(this.positions.keys().next().value!);
     if (previous && previous.page === position.page && previous.offset === position.offset && previous.zoom === position.zoom) return;
+    this.unsavedPositions.add(path);
     clearTimeout(this.positionTimer);
     this.positionTimer = setTimeout(() => void this.persist(), 1000);
   }
 
   async saveSettings(): Promise<void> {
     await this.persist();
+    this.applySettings();
+  }
+
+  /**
+   * Another Obsidian on the same vault, or Obsidian Sync, rewrote the data file. Adopt its settings and positions,
+   * so this window's next write doesn't put back the old ones. Positions read here but not yet written still win.
+   */
+  async onExternalSettingsChange(): Promise<void> {
+    const data = await this.loadData();
+    this.settings = loadSettings(data);
+    this.store.folder = this.settings.folder;
+    const positions = loadPositions(data);
+    for (const path of this.unsavedPositions) {
+      const position = this.positions.get(path);
+      if (position) { positions.delete(path); positions.set(path, position); }
+    }
+    this.positions = positions;
+    this.applySettings();
+    if (this.settingTab.containerEl.isConnected) this.settingTab.display();
+  }
+
+  private applySettings(): void {
     this.app.workspace.getLeavesOfType(READER_VIEW).forEach(leaf => (leaf.view as ReaderView).refreshSettings());
     this.app.workspace.getLeavesOfType(ANNOTATIONS_VIEW).forEach(leaf => (leaf.view as AnnotationsView).refresh());
   }
