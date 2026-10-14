@@ -4,19 +4,25 @@
   "private": true,
   "packageManager": "pnpm@12.4.1",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "pnpm typecheck && node esbuild.config.mjs production",
     "typecheck": "tsc --noEmit",
     "dev:setup": "node scripts/dev-vault.mjs",
     "dev:open": "node scripts/open-dev-vault.mjs",
-    "worktree:setup": "wt hook pre-start --yes"
+    "worktree:setup": "wt hook pre-start --yes",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
     "obsidian": "^1.13.1",
     "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "pdfjs-dist": "6.4.299"
   }
 }

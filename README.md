@@ -1,8 +1,16 @@
 # Reader Plugin
 
-An Obsidian desktop plugin for reading EPUB and text PDF source documents, keeping highlights and passage notes, and asking a reading assistant questions. The implementation is an initial scaffold with two commands to verify plugin loading and access to selected Markdown text. The Reader view, annotation storage, local retrieval, and Claude Code and Codex integrations are planned and are not implemented yet.
+An Obsidian desktop plugin for reading EPUB and text PDF source documents, keeping highlights and passage notes, and asking a reading assistant questions. The PDF Reader opens vault PDFs with continuous scrolling, zoom, a table of contents, highlights in configurable colors, and passage comments. Annotations save automatically to JSON records and generated Markdown notes in the vault. EPUB, local retrieval, and Claude Code and Codex integrations are planned and are not implemented yet.
 
 The [product direction](docs/product-direction.md) summarizes the intended workflow. The [reading workflow plan](docs/reading-workflow-plan.md) records the latest product decisions, architectural choices, and acceptance targets. The workflow plan is not yet an approved implementation plan.
+
+## PDF reading and annotations
+
+Vault PDFs open in Reader by default. Pages scroll continuously; a floating bar at the bottom center shows the page number with previous/next arrows and the zoom controls. Click the zoom percentage for Fit width, Fit page, or a preset, and use the reset button to return to Fit width. Ctrl/Cmd-wheel zooms around the pointer. The view header has a table of contents for PDFs with an outline and a button that reveals the annotations sidebar. Reader remembers each tab's position and zoom.
+
+Select a passage to show a popup at the cursor. Click a color to highlight, or the comment button to highlight and write a comment. Click any highlight to change its color, add or remove its comment, copy its text, or delete it; deletion offers Undo. The right sidebar lists the document's highlights: click one to jump to it, click a comment to edit it, or use the color dot to recolor. Comment fields grow with their text up to a limit and then scroll.
+
+Annotations save automatically to JSON records and generated Markdown notes, in `Reader annotations/` by default. Every edit updates open Reader tabs and the sidebar immediately; failed writes retry automatically and are reported only when they fail. Keep freeform writing in separate notes. In plugin settings you can add, remove, rename, reorder, and recolor highlight colors, and choose the annotation folder; changing the folder moves existing annotation files. Use **Reader Plugin: Open PDF in Obsidian's normal viewer** from the command palette, or the tab's **⋯** menu, when you need the built-in viewer. The [PDF reader guide](docs/pdf-reader.md) documents the storage schema, rename behavior, and runtime checks.
 
 ## Planned reading assistant workflow
 
@@ -42,7 +50,7 @@ obsidian vault="Reader Plugin Dev - reader-plugin" plugin:reload id=reader-plugi
 obsidian vault="Reader Plugin Dev - reader-plugin" commands filter=reader-plugin
 ```
 
-Use the matching vault name when checking another checkout. The plugin makes no model calls at this stage.
+Use the matching vault name when checking another checkout. The plugin makes no model calls at this stage. For the PDF workflow, open `Books/Sample reading book.pdf` with **Reader Plugin: Open PDF in Reader** and follow the [runtime verification steps](docs/pdf-reader.md#development-verification). Run `pnpm test` for annotation storage checks.
 
 ## Commits
 
