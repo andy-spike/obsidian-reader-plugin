@@ -45,26 +45,30 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 textarea.reader-comment-editor { display: block; box-sizing: border-box; resize: none; field-sizing: content; min-height: calc(3lh + 14px); max-height: calc(10lh + 14px); overflow-y: auto; padding: 6px 8px; font-size: var(--font-ui-small); line-height: 1.5; }
 
 /* ---- Annotations sidebar ---- */
-.reader-annotations { padding: var(--size-4-3) !important; }
-.reader-annotations-header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: var(--size-4-3); }
+/* Full-width cards with a color strip, grouped under sticky page headings. Each card is a separate surface on the sidebar background. */
+.reader-annotations { --reader-inset: var(--size-4-4); padding: 0 0 var(--size-4-6) !important; }
+.reader-annotations-header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--size-4-2); padding: var(--size-4-3) var(--reader-inset) var(--size-4-2); }
 .reader-annotations-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-semibold); }
-.reader-annotations-count { flex: none; color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.reader-save-error { margin-bottom: var(--size-4-2); color: var(--text-error); font-size: var(--font-ui-small); }
-.reader-empty { color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.6; }
-.reader-annotation-list { display: flex; flex-direction: column; gap: var(--size-4-2); }
-.reader-card { padding: 8px 10px 10px 12px; border: 1px solid var(--background-modifier-border); border-left: 3px solid var(--reader-color); border-radius: var(--radius-m); background: var(--background-primary); cursor: pointer; }
-.reader-card:hover { border-color: var(--background-modifier-border-hover); border-left-color: var(--reader-color); }
-.reader-card-head { display: flex; align-items: center; gap: 6px; min-height: 24px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.reader-card button.reader-card-color { width: 12px; height: 12px; min-width: 12px; padding: 0; border-radius: 50%; background: var(--reader-color); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15); cursor: pointer; }
-.reader-card button.reader-card-color:hover { transform: scale(1.25); background: var(--reader-color); }
-.reader-card-page { color: var(--text-normal); font-weight: var(--font-medium); }
-.reader-card-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reader-card-actions { display: flex; margin-left: auto; opacity: 0; transition: opacity 100ms ease; --icon-size: var(--icon-xs); }
-.reader-card:hover .reader-card-actions, .reader-card:focus-within .reader-card-actions { opacity: 1; }
-.reader-card-quote { display: -webkit-box; margin-top: 4px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 6; font-size: var(--font-ui-small); line-height: 1.5; }
-.reader-card-comment { margin-top: 8px; padding: 6px 8px; border-radius: var(--radius-s); background: var(--background-secondary); font-size: var(--font-ui-small); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
-.reader-card-comment:hover { background: var(--background-modifier-hover); }
-.reader-card .reader-comment-editor { width: 100%; margin-top: 8px; max-height: calc(14lh + 14px); }
+.reader-annotations-count { flex: none; color: var(--text-faint); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.reader-save-error { margin: 0 var(--reader-inset) var(--size-4-2); color: var(--text-error); font-size: var(--font-ui-small); }
+.reader-empty { padding: 0 var(--reader-inset); color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.6; }
+.reader-page-group + .reader-page-group { margin-top: var(--size-4-2); }
+.reader-page-heading { position: sticky; top: 0; z-index: 3; padding: var(--size-4-2) var(--reader-inset) var(--size-2-3); background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-medium); font-variant-numeric: tabular-nums; }
+.reader-entry { position: relative; padding: var(--size-4-3) var(--size-4-3) var(--size-4-3) var(--reader-inset); border-block: 1px solid var(--background-modifier-border); background: var(--background-primary); cursor: pointer; outline: none; }
+.reader-entry + .reader-entry { margin-top: var(--size-4-2); }
+.reader-entry::before { content: ""; position: absolute; inset: -1px auto -1px 0; width: 4px; background: var(--reader-color); }
+.reader-entry:hover { background: color-mix(in srgb, var(--background-primary) 96%, var(--text-normal)); }
+.reader-entry:focus-visible { box-shadow: inset 0 0 0 2px var(--background-modifier-border-focus); }
+.reader-entry-quote { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 6; color: var(--text-normal); font-family: var(--font-text); font-size: var(--font-ui-medium); line-height: 1.5; }
+.reader-entry-comment { margin-top: var(--size-4-2); padding-top: var(--size-4-2); border-top: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
+.reader-entry-comment:hover { color: var(--text-normal); }
+.reader-entry-comment:focus-visible { box-shadow: 0 0 0 2px var(--background-modifier-border-focus); outline: none; }
+.reader-entry .reader-comment-editor { width: 100%; margin-top: var(--size-4-2); max-height: calc(14lh + 14px); }
+/* Actions float on the card's top edge so hovering never reflows the list. */
+.reader-entry-actions { position: absolute; top: -13px; right: var(--size-4-2); z-index: 2; display: flex; padding: 2px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); box-shadow: var(--shadow-s); opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; --icon-size: var(--icon-xs); }
+.reader-entry:hover .reader-entry-actions, .reader-entry:focus-within .reader-entry-actions { opacity: 1; pointer-events: auto; }
+.reader-entry-actions button:last-child:hover { color: var(--text-error); }
+.reader-entry-swatch { display: block; width: 12px; height: 12px; border-radius: 50%; background: var(--reader-color); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15); }
 
 /* ---- Settings and table of contents ---- */
 .reader-color-setting .setting-item-info { display: none; }

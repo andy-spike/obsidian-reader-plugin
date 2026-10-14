@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, setTooltip, WorkspaceLeaf } from "obsidian";
 import { Annotation, AnnotationRecord, AnnotationStore } from "./annotations";
 import type { ReaderView } from "./reader-view";
 import { colorOf, ReaderSettings } from "./settings";
@@ -59,7 +59,16 @@ export class AnnotationsView extends ItemView {
       return;
     }
     const list = contentEl.createDiv({ cls: "reader-annotation-list" });
-    for (const a of [...record.annotations].sort((a, b) => a.page - b.page || a.position.start - b.position.start)) this.card(list, reader, record, a);
+    let group: HTMLElement | null = null;
+    let page = 0;
+    for (const a of [...record.annotations].sort((a, b) => a.page - b.page || a.position.start - b.position.start)) {
+      if (!group || a.page !== page) {
+        page = a.page;
+        group = list.createDiv({ cls: "reader-page-group" });
+        group.createDiv({ cls: "reader-page-heading", text: `Page ${page}` });
+      }
+      this.entry(group, reader, record, a);
+    }
     if (caret && this.editing) {
       const editor = contentEl.querySelector<HTMLTextAreaElement>(`[data-id="${this.editing}"] textarea`);
       editor?.focus();
@@ -67,31 +76,33 @@ export class AnnotationsView extends ItemView {
     }
   }
 
-  private card(list: HTMLElement, reader: ReaderView, record: AnnotationRecord, a: Annotation): void {
+  private entry(group: HTMLElement, reader: ReaderView, record: AnnotationRecord, a: Annotation): void {
     const settings = this.settings();
     const color = colorOf(settings, a.color);
-    const card = list.createDiv({ cls: "reader-card", attr: { "data-id": a.id } });
-    card.style.setProperty("--reader-color", color.value);
-    card.addEventListener("click", event => {
-      if (!(event.target as HTMLElement).closest("button, textarea, .reader-card-comment")) void reader.showAnnotation(a);
+    const entry = group.createDiv({ cls: "reader-entry", attr: { "data-id": a.id, tabindex: "0" } });
+    entry.style.setProperty("--reader-color", color.value);
+    entry.addEventListener("click", event => {
+      if (!(event.target as HTMLElement).closest("button, textarea, .reader-entry-comment")) void reader.showAnnotation(a);
+    });
+    entry.addEventListener("keydown", event => {
+      if (event.target === entry && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); void reader.showAnnotation(a); }
     });
 
-    const head = card.createDiv({ cls: "reader-card-head" });
-    const dot = head.createEl("button", { cls: "reader-card-color", attr: { type: "button", "aria-label": `Color: ${color.name}. Change color` } });
-    dot.addEventListener("click", event => colorMenu(settings.colors, a.color, id => {
+    entry.createDiv({ cls: "reader-entry-quote", text: a.quote.exact.replace(/\s+/g, " ").trim() });
+
+    const actions = entry.createDiv({ cls: "reader-entry-actions" });
+    const recolor = actions.createEl("button", { cls: "clickable-icon reader-icon-button reader-entry-color", attr: { type: "button", "aria-label": `Color: ${color.name}. Change color` } });
+    recolor.createSpan({ cls: "reader-entry-swatch" });
+    setTooltip(recolor, color.name, { placement: "top" });
+    recolor.addEventListener("click", event => colorMenu(settings.colors, a.color, id => {
       a.color = id;
       void this.store.save(record).catch(() => {});
     }).showAtMouseEvent(event));
-    head.createSpan({ cls: "reader-card-page", text: `Page ${a.page}` });
-    head.createSpan({ cls: "reader-card-label", text: color.name });
-    const actions = head.createDiv({ cls: "reader-card-actions" });
-    if (!a.comment && this.editing !== a.id) iconButton(actions, "message-square-plus", "Add comment", () => this.edit(a.id));
-    iconButton(actions, "trash-2", "Delete highlight", () => deleteAnnotation(this.store, record, a));
-
-    card.createDiv({ cls: "reader-card-quote", text: a.quote.exact.replace(/\s+/g, " ").trim() });
+    if (!a.comment && this.editing !== a.id) iconButton(actions, "message-square-plus", "Add comment", () => this.edit(a.id), "top");
+    iconButton(actions, "trash-2", "Delete highlight", () => deleteAnnotation(this.store, record, a), "top");
 
     if (this.editing === a.id) {
-      const editor = card.createEl("textarea", { cls: "reader-comment-editor", attr: { "aria-label": "Comment", placeholder: "Write a comment…", rows: "1" } });
+      const editor = entry.createEl("textarea", { cls: "reader-comment-editor", attr: { "aria-label": "Comment", placeholder: "Write a comment…", rows: "1" } });
       editor.value = a.comment;
       editor.addEventListener("input", () => {
         a.comment = editor.value;
@@ -104,7 +115,7 @@ export class AnnotationsView extends ItemView {
         this.refresh();
       });
     } else if (a.comment) {
-      const comment = card.createDiv({ cls: "reader-card-comment", text: a.comment, attr: { tabindex: "0", role: "button", "aria-label": "Edit comment" } });
+      const comment = entry.createDiv({ cls: "reader-entry-comment", text: a.comment, attr: { tabindex: "0", role: "button", "aria-label": "Edit comment" } });
       comment.addEventListener("click", () => this.edit(a.id));
       comment.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); this.edit(a.id); } });
     }
