@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "dev:setup": "node scripts/dev-vault.mjs",
     "dev:open": "node scripts/open-dev-vault.mjs",
-    "worktree:setup": "wt hook pre-start --yes",
+    "worktree:setup": "pnpm install --frozen-lockfile && pnpm build",
     "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {

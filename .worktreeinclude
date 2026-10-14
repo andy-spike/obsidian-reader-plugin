@@ -1,3 +1,0 @@
-# Reuse installed packages without sharing a writable node_modules symlink.
-# pnpm install still checks the destination checkout's lockfile.
-node_modules/
