@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -8,6 +8,8 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const vaultName = `Reader Plugin Dev - ${basename(root)}`;
 export const vaultPath = join(root, ".dev-vault", vaultName);
 export const pluginPath = join(vaultPath, ".obsidian", "plugins", "reader-plugin");
+/** The headless Obsidian keeps its own configuration folder, so its tabs and plugin settings stay out of the everyday one. */
+export const headlessConfig = ".obsidian-headless";
 
 async function seed(relativePath, content) {
   const destination = join(vaultPath, relativePath);
@@ -30,11 +32,15 @@ export async function setupVault() {
 
 export async function deployPlugin() {
   await setupVault();
-  for (const name of ["main.js", "manifest.json", "styles.css"]) {
-    await copyFile(join(root, name), join(pluginPath, name));
+  const targets = [pluginPath];
+  const headless = join(vaultPath, headlessConfig, "plugins", "reader-plugin");
+  if (await access(join(vaultPath, headlessConfig)).then(() => true, () => false)) targets.push(headless);
+  for (const target of targets) {
+    await mkdir(target, { recursive: true });
+    for (const name of ["main.js", "manifest.json", "styles.css"]) await copyFile(join(root, name), join(target, name));
+    // Tells the plugin it is a development copy, so it reloads itself after each build.
+    await writeFile(join(target, ".dev-reload"), "");
   }
-  // Tells the plugin it is a development copy, so it reloads itself after each build.
-  await writeFile(join(pluginPath, ".dev-reload"), "");
   console.log(`Plugin deployed to ${pluginPath}`);
 }
 

@@ -56,7 +56,7 @@ Use the matching vault name when checking another checkout. The plugin makes no 
 
 ### Headless checks
 
-`pnpm headless` runs a second, private Obsidian on this checkout's development vault with no window. It never takes focus, so checks can run while you keep working, including in your own Obsidian. It uses the Obsidian you already have installed (set `OBSIDIAN_APP` to its executable or AppImage if it isn't found) and keeps its own app data in `.dev-vault/headless-obsidian/`. It shares the newest app update from your everyday install, so both run the same Obsidian version. Commands talk to it over the Chrome DevTools Protocol:
+`pnpm headless` runs a second, private Obsidian on this checkout's development vault with no window. It never takes focus, so checks can run while you keep working, including in your own Obsidian. It uses the Obsidian you already have installed (set `OBSIDIAN_APP` to its executable or AppImage if it isn't found) and keeps its own app data in `.dev-vault/headless-obsidian/`. In the vault it uses its own configuration folder, `.obsidian-headless/`, first copied from `.obsidian/` without the tab layout, so its tabs and plugin settings never change your Obsidian's. Builds deploy the plugin to both folders. Notes, PDFs and annotations are shared. It shares the newest app update from your everyday install, so both run the same Obsidian version. Commands talk to it over the Chrome DevTools Protocol:
 
 ```sh
 pnpm headless start                    # launch it; other commands also start it when needed

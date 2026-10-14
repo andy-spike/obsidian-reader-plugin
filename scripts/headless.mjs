@@ -3,10 +3,10 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, openSync } from "node:fs";
-import { copyFile, link, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, link, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { root, setupVault, vaultPath } from "./dev-vault.mjs";
+import { headlessConfig, root, setupVault, vaultPath } from "./dev-vault.mjs";
 
 const dataDir = join(root, ".dev-vault", "headless-obsidian");
 const pidFile = join(dataDir, "headless.pid");
@@ -81,6 +81,11 @@ async function start() {
   const id = createHash("sha256").update(vaultPath).digest("hex").slice(0, 16);
   await writeFile(join(dataDir, "obsidian.json"), JSON.stringify({ vaults: { [id]: { path: vaultPath, ts: Date.now(), open: true } } }));
   await linkLatestApp();
+  // Its own configuration folder, started from a copy of the everyday one without its tab layout. Obsidian picks the folder
+  // per vault from its local storage, which belongs to this data folder, so the everyday Obsidian keeps using .obsidian.
+  if (!existsSync(join(vaultPath, headlessConfig))) {
+    await cp(join(vaultPath, ".obsidian"), join(vaultPath, headlessConfig), { recursive: true, filter: source => !/workspace(-mobile)?\.json$/.test(source) });
+  }
   const log = openSync(join(dataDir, "obsidian.log"), "a");
   const child = spawn(findObsidian(), [
     "--no-sandbox", "--ozone-platform=headless", `--user-data-dir=${dataDir}`, "--remote-debugging-port=0",
@@ -102,9 +107,16 @@ async function start() {
     }
     return false;
   })()`;
-  // Accepting the prompt reloads the window, which drops the connection; try again until the plugin is loaded.
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const ok = await withPage(state.port, page => page.evaluate(ready)).catch(() => false);
+  // Accepting the prompt, or switching the configuration folder, reloads the window, which drops the connection;
+  // try again until the plugin is loaded from the headless configuration folder.
+  const useOwnConfig = `(() => {
+    if (app.vault.configDir === ${JSON.stringify(headlessConfig)}) return true;
+    localStorage.setItem(app.appId + "-config", ${JSON.stringify(headlessConfig)});
+    location.reload();
+    return false;
+  })()`;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const ok = await withPage(state.port, async page => await page.evaluate(ready) && await page.evaluate(useOwnConfig)).catch(() => false);
     if (ok) return state;
     await wait(1000);
   }
