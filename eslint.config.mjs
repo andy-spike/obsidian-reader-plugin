@@ -8,6 +8,7 @@ export default [{
   languageOptions: { parser, parserOptions: { project: "./tsconfig.json", tsconfigRootDir: import.meta.dirname } },
   plugins: { "@typescript-eslint": typescript, obsidianmd },
   rules: {
+    "@typescript-eslint/no-unnecessary-type-assertion": "error",
     "@typescript-eslint/no-unsafe-assignment": "error",
     "@typescript-eslint/no-unsafe-member-access": "error",
     "@typescript-eslint/no-unsafe-argument": "error",

@@ -996,7 +996,7 @@ export class ReaderView extends FileView {
         if (item.items.length) walk(item.items, depth + 1, node.id);
       }
     };
-    walk(outline as PdfOutlineItem[], 0, null);
+    walk(outline, 0, null);
     const resolved = await Promise.all(targets);
     resolved.forEach((target, id) => { nodes[id]!.page = target?.page; });
     if (pdf !== this.pdf) return;
