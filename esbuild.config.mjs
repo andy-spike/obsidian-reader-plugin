@@ -28,6 +28,7 @@ const context = await esbuild.context({
   outfile: "main.js",
   sourcemap: production ? false : "inline",
   minify: production,
+  define: { __DEV__: JSON.stringify(!production) },
   banner: { js: licenseBanner },
   legalComments: "inline",
   logLevel: "info",

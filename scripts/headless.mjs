@@ -5,10 +5,17 @@ import { createHash } from "node:crypto";
 import { existsSync, openSync } from "node:fs";
 import { copyFile, cp, link, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { headlessConfig, root, setupVault, vaultPath } from "./dev-vault.mjs";
+import { join, resolve, relative, isAbsolute } from "node:path";
+import { headlessConfig, root, setupVault, vaultPath as developmentVaultPath } from "./dev-vault.mjs";
 
-const dataDir = join(root, ".dev-vault", "headless-obsidian");
+const testVault = process.env.READING_DESK_TEST_VAULT;
+const vaultPath = testVault ? resolve(testVault) : developmentVaultPath;
+const relativeVault = relative(join(root, ".dev-vault"), vaultPath);
+if (testVault && (!relativeVault || relativeVault.startsWith("..") || isAbsolute(relativeVault))) {
+  throw new Error("READING_DESK_TEST_VAULT must point to a disposable vault inside this checkout's .dev-vault folder.");
+}
+const dataFolder = testVault ? `headless-release-${createHash("sha256").update(vaultPath).digest("hex").slice(0, 16)}` : "headless-obsidian";
+const dataDir = join(root, ".dev-vault", dataFolder);
 const pidFile = join(dataDir, "headless.pid");
 const WIDTH = 1600, HEIGHT = 1000;
 
@@ -74,7 +81,7 @@ async function linkLatestApp() {
 async function start() {
   const existing = await running();
   if (existing) return existing;
-  await setupVault();
+  if (!testVault) await setupVault();
   await mkdir(dataDir, { recursive: true });
   await rm(join(dataDir, "DevToolsActivePort"), { force: true });
   // A separate data folder makes this its own Obsidian, with only the development vault registered and open.

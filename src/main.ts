@@ -1,6 +1,4 @@
-import { existsSync, watch } from "node:fs";
-import { join } from "node:path";
-import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, FileSystemAdapter, Platform, WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, WorkspaceLeaf } from "obsidian";
 
 import { ANNOTATION_FOLDER, AnnotationStore, LEGACY_ANNOTATION_FOLDER } from "./annotations";
 import { BookNotes } from "./book-notes";
@@ -272,53 +270,10 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       void store.rename(oldPath, file.path).catch(error => new Notice(`Could not update annotation source: ${error.message}`));
     }));
     this.registerObsidianProtocolHandler("reader-plugin", params => void openPassage(params));
-    this.addCommand({
-      id: "check-development-setup",
-      name: "Check development setup",
-      callback: () => {
-        new Notice("Reading Desk is loaded. The development setup is ready.");
-      },
-    });
-
-    this.addCommand({
-      id: "inspect-reading-context",
-      name: "Inspect reading context",
-      checkCallback: (checking) => {
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!view?.file) return false;
-        if (!checking) {
-          const selection = view.editor.getSelection();
-          new Notice(
-            selection
-              ? `${view.file.basename}: selected ${selection.length} characters.`
-              : `${view.file.basename}: select a passage to inspect reading context.`,
-          );
-        }
-        return true;
-      },
-    });
-    this.reloadOnRebuild();
-  }
-
-  /**
-   * In a development vault, reloads the plugin whenever a build replaces its files, so every open Obsidian picks up the change without being touched.
-   * The build writes the `.dev-reload` marker there; installed copies don't have it.
-   */
-  private reloadOnRebuild(): void {
-    const adapter = this.app.vault.adapter;
-    if (!Platform.isDesktopApp || !(adapter instanceof FileSystemAdapter) || !this.manifest.dir) return;
-    const folder = join(adapter.getBasePath(), this.manifest.dir);
-    if (!existsSync(join(folder, ".dev-reload"))) return;
-    const plugins = (this.app as unknown as { plugins: { disablePlugin(id: string): Promise<void>; enablePlugin(id: string): Promise<boolean> } }).plugins;
-    const id = this.manifest.id;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // A build copies several files; reload once they have all landed.
-    const watcher = watch(folder, (_, name) => {
-      if (name !== "main.js" && name !== "styles.css" && name !== "manifest.json") return;
-      clearTimeout(timer);
-      timer = setTimeout(() => void plugins.disablePlugin(id).then(() => plugins.enablePlugin(id)), 300);
-    });
-    this.register(() => { clearTimeout(timer); watcher.close(); });
+    if (__DEV__) {
+      const { setupDevelopment } = await import("./development");
+      setupDevelopment(this);
+    }
   }
 
   async saveSettings(): Promise<void> {

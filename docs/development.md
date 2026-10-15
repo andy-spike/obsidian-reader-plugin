@@ -13,7 +13,7 @@ pnpm dev:open
 pnpm dev
 ```
 
-`pnpm build` checks TypeScript and Svelte components with `svelte-check`. It then generates the CommonJS `main.js` and copies `main.js`, `manifest.json`, and `styles.css` into this checkout's development vault. `pnpm dev` watches TypeScript and Svelte changes and copies each successful build to the same vault. Restart the watcher after you edit the build configuration. Changes to only `manifest.json` or `styles.css` need `pnpm dev:setup` to copy them.
+`pnpm build` checks TypeScript and Svelte components with `svelte-check`. It then generates the CommonJS `main.js` and copies `main.js`, `manifest.json`, and `styles.css` into this checkout's development vault. `pnpm build` excludes development commands and rebuild watching. `pnpm dev` includes those helpers, watches TypeScript and Svelte changes, and copies each successful build to the same vault. Restart the watcher after you edit the build configuration. Changes to only `manifest.json` or `styles.css` need `pnpm dev:setup` to copy them.
 
 ## Interface
 
@@ -33,13 +33,13 @@ Edit plugin source in the worktree and run `pnpm dev` to deploy rebuilds into it
 
 ## Checking the setup
 
-In the command palette, run **Reading Desk: Check development setup**. You should see a notice confirming that the plugin loaded. Open `Books/Sample book.md` in editing mode, select text, and run **Reading Desk: Inspect reading context** to verify access to the selection.
+With `pnpm dev` running, open the command palette and run **Reading Desk: Check development setup**. You should see a notice confirming that the plugin loaded. Open `Books/Sample book.md` in editing mode, select text, and run **Reading Desk: Inspect reading context** to verify access to the selection.
 
 The plugin makes no model calls at this stage. For the PDF workflow, open `Books/Sample reading book.pdf` with **Reading Desk: Open PDF in Reader**, and follow the [runtime verification steps](pdf-reader.md#development-verification). Run `pnpm test` for annotation storage checks.
 
 ## Reloading
 
-Obsidian keeps a loaded plugin in memory. In a development vault, the plugin reloads itself whenever `pnpm build` or `pnpm dev` replaces its files. The build adds a `.dev-reload` marker beside them, and the plugin watches its folder only while that marker exists. Open PDFs stay open at the same page. Your Obsidian window is never raised or focused.
+Obsidian keeps a loaded plugin in memory. In a development vault, a build from `pnpm dev` reloads itself whenever the watcher replaces its files. Production builds from `pnpm build` need a manual reload, such as `pnpm headless reload` for the headless instance. The build adds a `.dev-reload` marker beside them, and the plugin watches its folder only while that marker exists. Open PDFs stay open at the same page. Your Obsidian window is never raised or focused.
 
 The first time, or when a vault has an older build loaded, reload the plugin once by turning it off and on in **Settings → Community plugins**. If the Obsidian CLI is enabled, you can also reload the main checkout's plugin with:
 
@@ -100,3 +100,11 @@ Agents do task work in T3 worktrees based on local `main`. See [the worktree wor
 ## References
 
 The build follows Obsidian's [plugin development guide](https://docs.obsidian.md/Plugins/Getting%20started/Build%20a%20plugin) and [sample plugin](https://github.com/obsidianmd/obsidian-sample-plugin). The source stays separate from the disposable vault, so each checkout can run its own build.
+
+## Release verification
+
+Reading Desk initially supports Obsidian desktop 1.14.4 and newer. This is the version verified on Linux; Windows and macOS remain unverified.
+
+Run `pnpm test:release` before publishing. It builds production assets and installs only `main.js`, `manifest.json`, and `styles.css` into a fresh vault under `.dev-vault/release-check-*`, with no settings or development marker. It verifies that development commands and watchers are absent and that license notices are present, then runs the complete headless workflow suite. The private Obsidian process stops afterward; the disposable vault remains for inspection.
+
+Create a GitHub release with a tag matching the manifest version exactly, without a `v` prefix, and attach those three assets. Commit and push the matching manifest on the default branch before submitting the repository through the Obsidian Community directory.
