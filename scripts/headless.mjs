@@ -143,10 +143,24 @@ async function start() {
   throw new Error(`Obsidian started, but Reading Desk did not load. See ${join(dataDir, "obsidian.log")}.`);
 }
 
+function isAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code === "EPERM"; }
+}
+
+/**
+ * Asks only Obsidian's main process to quit; it then closes its own helper processes.
+ * Signalling the whole process group kills the GPU helper first, and Chromium then aborts with
+ * "GPU process isn't usable. Goodbye.", leaving a core dump. The group is killed only if the main process hangs.
+ */
 async function stop() {
   const state = await running();
   if (!state) return false;
-  try { process.kill(-state.pid); } catch { process.kill(state.pid); }
+  process.kill(state.pid, "SIGTERM");
+  for (let i = 0; i < 50 && isAlive(state.pid); i++) await wait(200);
+  if (isAlive(state.pid)) {
+    try { process.kill(-state.pid, "SIGKILL"); } catch { process.kill(state.pid, "SIGKILL"); }
+  }
   await rm(pidFile, { force: true });
   return true;
 }
