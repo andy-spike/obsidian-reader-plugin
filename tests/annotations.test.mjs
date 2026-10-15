@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 const directory = await mkdtemp(join(tmpdir(), "reader-tests-"));
-await build({ entryPoints: ["src/annotations.ts"], bundle: true, platform: "node", format: "esm", outfile: join(directory, "annotations.mjs") });
+await build({ entryPoints: ["src/annotations.ts"], bundle: true, define: { window: "globalThis" }, platform: "node", format: "esm", outfile: join(directory, "annotations.mjs") });
 const { AnnotationStore, parseRecord, fingerprint } = await import(pathToFileURL(join(directory, "annotations.mjs")));
 const hash = fingerprint(new Uint8Array([1, 2, 3]).buffer);
 function storage() {

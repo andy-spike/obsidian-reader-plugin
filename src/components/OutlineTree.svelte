@@ -1,8 +1,9 @@
 <script lang="ts" module>
-  export interface OutlineNode { id: number; title: string; depth: number; page?: number; parent: number | null; children: number[] }
+  export type { OutlineNode } from "../outline";
 </script>
 
 <script lang="ts">
+  import type { OutlineNode } from "../outline";
   import { tick, untrack } from "svelte";
   import { icon } from "./obsidian";
 

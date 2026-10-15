@@ -13,7 +13,7 @@ pnpm dev:open
 pnpm dev
 ```
 
-`pnpm build` checks TypeScript and Svelte components with `svelte-check`. It then generates the CommonJS `main.js` and copies `main.js`, `manifest.json`, and `styles.css` into this checkout's development vault. `pnpm build` excludes development commands and rebuild watching. `pnpm dev` includes those helpers, watches TypeScript and Svelte changes, and copies each successful build to the same vault. Restart the watcher after you edit the build configuration. Changes to only `manifest.json` or `styles.css` need `pnpm dev:setup` to copy them.
+`pnpm build` checks TypeScript and Svelte components with `svelte-check`. It then generates the production CommonJS `main.js` without preparing or accessing a development vault. Run `pnpm dev:setup` to copy `main.js`, `manifest.json`, and `styles.css` into this checkout's development vault. `pnpm build` excludes development commands and rebuild watching. `pnpm dev` includes those helpers, watches TypeScript and Svelte changes, and copies each successful build to the same vault. Restart the watcher after you edit the build configuration. Changes to only `manifest.json` or `styles.css` need `pnpm dev:setup` to copy them.
 
 ## Interface
 
@@ -73,7 +73,7 @@ Add `--window=Settings` to drive the settings window, which Obsidian opens separ
 
 ## Architecture and tests
 
-Run `pnpm test:e2e` to build the plugin and exercise the reading workflow in real, windowless Obsidian. It uses `pnpm headless` on this checkout's disposable vault and never drives your everyday Obsidian. The checks use real pointer and keyboard input for selection, navigation, highlights, clipboard copy, and writing, with Obsidian workspace APIs for opening files and arranging tabs. Assertions check rendered elements, annotation JSON, and Markdown on disk.
+Run `pnpm test:e2e` to build and deploy the plugin and exercise the reading workflow in real, windowless Obsidian. It uses `pnpm headless` on this checkout's disposable vault and never drives your everyday Obsidian. The checks use real pointer and keyboard input for selection, navigation, highlights, clipboard copy, and writing, with Obsidian workspace APIs for opening files and arranging tabs. Assertions check rendered elements, annotation JSON, and Markdown on disk.
 
 The suite covers default PDF routing and native-viewer fallback, page and zoom controls, table-of-contents search, selection popups, recoloring, book-note writing and following in both placements, delete and Undo, passage links, highlight mode, shared edits across tabs, rename, reading-position restoration, plugin reload, and a fresh Obsidian process. It injects an annotation write failure into the development vault's adapter to verify the retry notice, preservation of the previous JSON, and automatic recovery. It restores the adapter and plugin settings afterward.
 
@@ -95,7 +95,7 @@ Agents should commit each completed unit of work, such as a verified fix or a fi
 
 ## Worktrees
 
-Agents do task work in T3 worktrees based on local `main`. See [the worktree workflow](worktrees.md). T3's **Worktree setup** script runs `pnpm worktree:setup`. It installs from the frozen lockfile and builds the checkout's own development vault. Start the **Dev watcher** script (`pnpm dev`) from T3 when you want rebuilds on save. Run `npm run dev:open` from that checkout to open its vault.
+Agents do task work in T3 worktrees based on local `main`. See [the worktree workflow](worktrees.md). T3's **Worktree setup** script runs `pnpm worktree:setup`. It installs from the frozen lockfile, builds production assets, and prepares the checkout's own development vault. Start the **Dev watcher** script (`pnpm dev`) from T3 when you want rebuilds on save. Run `npm run dev:open` from that checkout to open its vault.
 
 ## References
 
@@ -108,3 +108,11 @@ Reading Desk initially supports Obsidian desktop 1.14.4 and newer. This is the v
 Run `pnpm test:release` before publishing. It builds production assets and installs only `main.js`, `manifest.json`, and `styles.css` into a fresh vault under `.dev-vault/release-check-*`, with no settings or development marker. It verifies that development commands and watchers are absent and that license notices are present, then runs the complete headless workflow suite. The private Obsidian process stops afterward; the disposable vault remains for inspection.
 
 Create a GitHub release with a tag matching the manifest version exactly, without a `v` prefix, and attach those three assets. Commit and push the matching manifest on the default branch before submitting the repository through the Obsidian Community directory.
+
+### Submission checks and attested releases
+
+Run `pnpm lint` for the directory review's source rules, and `pnpm test:source-build` after `pnpm build` to verify a fresh dependency installation and reproducible production build without `.git` or a development vault. `pnpm test:release` runs the headless workflows on a clean release installation.
+
+The Build and release workflow validates pushes to main. To publish, update the versions in `package.json`, `manifest.json`, and `versions.json`, add `docs/releases/<version>.md`, validate locally, commit, and push a matching numeric Git tag. On a tag push, GitHub Actions builds the assets, creates provenance attestations for all three files, and publishes the release. Do not replace assets by uploading locally built files afterward: the attestations identify the exact bytes built by the workflow.
+
+Download the release files and verify them with `gh attestation verify main.js --repo andy-spike/obsidian-reader-plugin`, and repeat for `manifest.json` and `styles.css`.

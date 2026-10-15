@@ -35,12 +35,12 @@ export function setupDevelopment(plugin: Plugin): void {
   if (!existsSync(join(folder, ".dev-reload"))) return;
   const plugins = (plugin.app as unknown as { plugins: { disablePlugin(id: string): Promise<void>; enablePlugin(id: string): Promise<boolean> } }).plugins;
   const id = plugin.manifest.id;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: number | undefined;
   // A build copies several files; reload once they have all landed.
   const watcher = watch(folder, (_, name) => {
     if (name !== "main.js" && name !== "styles.css" && name !== "manifest.json") return;
-    clearTimeout(timer);
-    timer = setTimeout(() => void plugins.disablePlugin(id).then(() => plugins.enablePlugin(id)), 300);
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => void plugins.disablePlugin(id).then(() => plugins.enablePlugin(id)), 300);
   });
-  plugin.register(() => { clearTimeout(timer); watcher.close(); });
+  plugin.register(() => { window.clearTimeout(timer); watcher.close(); });
 }

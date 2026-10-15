@@ -1,5 +1,5 @@
 /* ---- Reader layout ---- */
-.reader-view { position: relative; display: flex; flex-direction: column; padding: 0 !important; overflow: hidden; }
+.workspace-leaf-content .view-content.reader-view { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .reader-stage { position: relative; flex: 1; min-height: 0; overflow: auto; outline: none; background: var(--background-secondary); scrollbar-gutter: stable; }
 /* While a PDF opens, pages and controls wait until the pages in view are drawn, then appear together. */
 .reader-pages, .reader-controls { transition: opacity 120ms ease-out; }
@@ -53,7 +53,7 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 .reader-view button.reader-text-button { display: flex; align-items: center; gap: var(--size-2-2); padding: var(--size-2-2) var(--size-4-2) var(--size-2-2) var(--size-2-3); color: var(--text-muted); font-size: var(--font-ui-small); }
 .reader-view button.reader-text-button:hover { color: var(--text-normal); }
 .reader-button-icon { display: flex; }
-.reader-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.reader-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 /* Comment fields grow with their text up to a limit, then scroll. They never show a resize handle. */
 
 /* ---- Annotations sidebar ---- */
@@ -61,7 +61,7 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 /* Passage quotes in book notes take their highlight's color, set per highlight by the plugin as --reader-color. */
 .callout[data-callout="quote"]:has(a[href^="obsidian://reader-plugin"]) { border-left: 3px solid var(--reader-color, rgb(var(--callout-quote))); background-color: color-mix(in srgb, var(--reader-color, transparent) 10%, transparent); mix-blend-mode: normal; }
 .callout[data-callout="quote"]:has(a[href^="obsidian://reader-plugin"]) .callout-icon { color: var(--reader-color, inherit); }
-.reader-annotations { --reader-inset: var(--size-4-4); padding: 0 0 var(--size-4-6) !important; }
+.workspace-leaf-content .view-content.reader-annotations { --reader-inset: var(--size-4-4); padding: 0 0 var(--size-4-6); }
 .reader-annotations-title { padding: var(--size-4-3) var(--reader-inset) var(--size-4-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-semibold); }
 .reader-empty { padding: 0 var(--reader-inset); color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.6; }
 /* Actions float on the card's top edge so hovering never reflows the list. They layer above the sticky page heading, which covers the first card's edge. */
@@ -106,7 +106,7 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 .reader-page .textLayer { position: absolute; inset: 0; z-index: 2; overflow: clip; opacity: 1; text-align: initial; line-height: 1; letter-spacing: normal; word-spacing: normal; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; color-scheme: only light; --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size)); }
 .reader-page .textLayer :is(span, br) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; }
 .reader-page .textLayer > :not(.markedContent), .reader-page .textLayer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0; --scale-x: 1; --rotate: 0deg; font-size: calc(var(--text-scale-factor) * var(--font-height)); transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
-.reader-page .textLayer .markedContent { display: contents; }
+.reader-page .textLayer .markedContent { position: static; }
 .reader-page .textLayer span[role="img"] { user-select: none; cursor: default; }
 .reader-page .textLayer ::selection { background: color-mix(in srgb, var(--interactive-accent) 32%, transparent); color: transparent; }
 .reader-page .textLayer br::selection { background: transparent; }
@@ -121,3 +121,5 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
   content: "";
   flex: 0 0 var(--icon-size);
 }
+
+.reader-color-setting { transform: translateY(var(--reader-row-offset, 0px)); }

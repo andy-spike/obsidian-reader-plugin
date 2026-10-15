@@ -198,6 +198,16 @@ try {
     saved();
   });
 
+  step("book-note quote colors render without injected styles and follow recoloring", () => {
+    evaluate(`const leaf = app.workspace.getLeavesOfType('markdown').find(l => l.view.file?.path === ${record()}.notePath); await leaf.setViewState({type:'markdown', state:{file:${record()}.notePath, mode:'preview'}}); return true;`);
+    const quote = `app.workspace.getLeavesOfType('markdown').find(l => l.view.file?.path === ${record()}.notePath)?.view.containerEl.querySelector('.callout[data-callout="quote"]')`;
+    waitFor(`!!${quote} && (${quote}).style.getPropertyValue('--reader-color') === ${JSON.stringify(originalSettings.colors.find(color => color.id === 'blue').value)}`, 'Rendered quote did not take the highlight color');
+    check(`!document.getElementById('reader-plugin-quote-colors')`, 'Quote colors injected a style element');
+    activate(); click('.reader-mark'); click('.reader-popup [data-color="yellow"]');
+    waitFor(`!!${quote} && (${quote}).style.getPropertyValue('--reader-color') === ${JSON.stringify(originalSettings.colors.find(color => color.id === 'yellow').value)}`, 'Rendered quote did not follow recoloring');
+    saved();
+  });
+
   step("delete preserves writing and Undo restores the highlight", () => {
     activate(); click('.reader-mark'); press("Delete");
     waitFor(`${record()}.annotations.length === 0`, "Delete did not remove highlight");
@@ -347,6 +357,29 @@ try {
     assert.equal(after.state.zoom, before.state.zoom);
     assert.ok(Math.abs(after.state.offset - before.state.offset) < 0.02, 'Reload changed the position within the page');
     check(`(await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing')`, "Reload lost writing");
+  });
+
+  step("searchable settings refresh added colors and save drag reordering", () => {
+    const colors = evaluate(`return structuredClone(${plugin}.settings.colors);`);
+    const tab = `${plugin}.settingTab`;
+    try {
+      evaluate(`app.setting.open(); app.setting.openTabById('reading-desk'); return true;`);
+      run('eval', `require('@electron/remote').getCurrentWindow().setSize(1100, 950)`, '--window=Settings');
+      waitFor(`${tab}.containerEl.querySelectorAll('.reader-color-setting').length === ${colors.length}`, 'Declarative settings did not render the palette');
+      check(`['Show the book note with PDFs','Open book notes','Book notes folder','Book note template','Annotation folder'].every(name => ${tab}.settingItems.flatMap(group => group.items ?? []).some(item => item.name === name))`, 'Settings definitions are missing searchable names');
+      for (let i = 0; i < 2; i++) {
+        evaluate(`const button = [...${tab}.containerEl.querySelectorAll('button')].find(el => el.textContent === 'Add color'); button.dataset.readerE2eAddColor = ''; return true;`);
+        run('click', '[data-reader-e2e-add-color]', '--window=Settings');
+        waitFor(`${tab}.containerEl.querySelectorAll('.reader-color-setting').length === ${colors.length + i + 1}`, 'Added color did not refresh the settings UI');
+      }
+      const before = evaluate(`return ${plugin}.settings.colors.slice(-2).map(color => color.id);`);
+      const points = evaluate(`const rows = [...${tab}.containerEl.querySelectorAll('.reader-color-setting')].slice(-2); return rows.map(row => { const rect = row.querySelector('.reader-color-handle').getBoundingClientRect(); return [rect.x + rect.width / 2, rect.y + rect.height / 2].join(','); });`);
+      run('drag', points[0], points[1], '--window=Settings');
+      waitFor(`${plugin}.settings.colors.at(-1).id === ${JSON.stringify(before[0])}`, 'Dragging did not reorder added colors');
+      check(`JSON.stringify((await ${plugin}.loadData()).colors.slice(-2).map(color => color.id)) === ${JSON.stringify(JSON.stringify([...before].reverse()))}`, 'Reordered colors were not saved');
+    } finally {
+      evaluate(`${plugin}.settings.colors = ${JSON.stringify(colors)}; await ${plugin}.saveSettings(); ${tab}.update(); app.setting.close(); return true;`);
+    }
   });
 
   step("a fresh Obsidian process reopens the saved reading position and annotations", () => {

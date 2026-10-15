@@ -1,6 +1,7 @@
 import { App, Modal } from "obsidian";
 import { mount, unmount } from "svelte";
-import OutlineTree, { type OutlineNode } from "./components/OutlineTree.svelte";
+import OutlineTree from "./components/OutlineTree.svelte";
+import type { OutlineNode } from "./outline";
 
 /** The PDF's table of contents as a collapsible tree with search. `OutlineTree.svelte` renders its contents. */
 export class OutlineModal extends Modal {
@@ -13,7 +14,7 @@ export class OutlineModal extends Modal {
     this.modalEl.addClass("reader-outline-modal");
     this.tree = mount(OutlineTree, { target: this.contentEl, props: {
       nodes: this.nodes, current: this.current,
-      choose: node => { this.close(); this.choose(node); },
+      choose: (node: OutlineNode) => { this.close(); this.choose(node); },
     } });
   }
 

@@ -23,7 +23,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   /** Redraws the highlight colors of quotes in book notes. */
   private paintQuotes: (() => void) | null = null;
   async onload(): Promise<void> {
-    const data = await this.loadData();
+    const data: unknown = await this.loadData();
     this.saved = new SavedReadingState(data, { read: () => this.loadData(), write: data => this.saveData(data) }, loadSettings,
       error => console.error("Reading Desk: could not save reading state.", error));
     this.settings = this.saved.settings;
@@ -46,21 +46,30 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     };
     this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, () => following.current));
     /** Book note quotes take their highlight's color, matched by the highlight ID in the quote's link, without changing the note. */
-    const quoteStyle = document.head.createEl("style", { attr: { id: "reader-plugin-quote-colors" } });
-    this.register(() => quoteStyle.remove());
+    const paintQuoteElements = (root: HTMLElement, reset = false) => {
+      const colors = new Map((reset ? [] : store.loaded().flatMap(record => record.annotations)).map(annotation =>
+        [annotation.id, colorOf(this.settings, annotation.color).value]));
+      root.querySelectorAll<HTMLAnchorElement>('a[href^="obsidian://reader-plugin?"]').forEach(link => {
+        const callout = link.closest<HTMLElement>('.callout[data-callout="quote"]');
+        if (!callout) return;
+        const color = colors.get(new URL(link.href).searchParams.get("annotation") ?? "");
+        const rgb = color ? [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16)).join(", ") : "";
+        callout.setCssProps({ "--callout-color": rgb, "--reader-color": color ?? "" });
+      });
+    };
+    this.registerMarkdownPostProcessor(element => paintQuoteElements(element));
     let paintFrame = 0;
     const paintQuotes = () => {
       if (paintFrame) return;
-      paintFrame = requestAnimationFrame(() => {
+      paintFrame = window.requestAnimationFrame(() => {
         paintFrame = 0;
-        quoteStyle.textContent = store.loaded().flatMap(record => record.annotations).map(annotation => {
-          const hex = colorOf(this.settings, annotation.color).value.slice(1);
-          const rgb = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16)).join(", ");
-          return `.callout[data-callout="quote"]:has(a[href*="annotation=${annotation.id}"]) { --callout-color: ${rgb}; --reader-color: rgb(${rgb}); }`;
-        }).join("\n");
+        for (const leaf of workspace.getLeavesOfType("markdown")) paintQuoteElements(leaf.view.containerEl);
       });
     };
-    this.register(() => cancelAnimationFrame(paintFrame));
+    this.register(() => window.cancelAnimationFrame(paintFrame));
+    this.register(() => {
+      for (const leaf of workspace.getLeavesOfType("markdown")) paintQuoteElements(leaf.view.containerEl, true);
+    });
     this.paintQuotes = paintQuotes;
     this.register(store.subscribe(() => paintQuotes()));
     /** Opens a PDF, reusing a Reader tab that already shows it. Returns the Reader, if it is one. */
@@ -150,13 +159,13 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
           .finally(() => this.redirecting.delete(leaf));
       }
     };
-    let routeTimer: ReturnType<typeof setTimeout> | undefined;
+    let routeTimer: number | undefined;
     // Events often come in bursts; one pass right after them is enough, and soon enough that Obsidian's viewer does little work first.
     const routePdfs = () => {
-      clearTimeout(routeTimer);
-      routeTimer = setTimeout(routeNow, 0);
+      window.clearTimeout(routeTimer);
+      routeTimer = window.setTimeout(routeNow, 0);
     };
-    this.register(() => clearTimeout(routeTimer));
+    this.register(() => window.clearTimeout(routeTimer));
     // PDF is reserved by Obsidian. Route file tabs via public workspace events instead of patching its viewer or registry.
     this.registerEvent(this.app.workspace.on("layout-change", routePdfs));
     this.registerEvent(this.app.workspace.on("file-open", routePdfs));
@@ -267,7 +276,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       this.saved.rename(oldPath, file.path);
       if (file instanceof TFile) bookNotes.renamed(file, oldPath);
-      void store.rename(oldPath, file.path).catch(error => new Notice(`Could not update annotation source: ${error.message}`));
+      void store.rename(oldPath, file.path).catch((error: unknown) => new Notice(`Could not update annotation source: ${error instanceof Error ? error.message : String(error)}`));
     }));
     this.registerObsidianProtocolHandler("reader-plugin", params => void openPassage(params));
     if (__DEV__) {
@@ -290,7 +299,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     this.settings = this.saved.settings;
     this.store.folder = this.settings.folder;
     this.applySettings();
-    if (this.settingTab.containerEl.isConnected) this.settingTab.display();
+    this.settingTab.update();
   }
 
   /** Open Reader views. Tabs not shown since Obsidian started are placeholders without the Reader's methods, so they are skipped. */

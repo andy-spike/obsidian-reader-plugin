@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 const directory = await mkdtemp(join(tmpdir(), "reader-state-tests-"));
-await build({ entryPoints: ["src/reading-state.ts"], bundle: true, platform: "node", format: "esm", outfile: join(directory, "state.mjs") });
+await build({ entryPoints: ["src/reading-state.ts"], bundle: true, define: { window: "globalThis" }, platform: "node", format: "esm", outfile: join(directory, "state.mjs") });
 const { SavedReadingState } = await import(pathToFileURL(join(directory, "state.mjs")));
 after(() => rm(directory, { recursive: true, force: true }));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };

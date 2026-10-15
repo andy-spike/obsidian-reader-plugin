@@ -1,4 +1,4 @@
-import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Scope, setIcon, Setting, TFile, TFolder } from "obsidian";
+import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Scope, setIcon, Setting, SettingDefinitionItem, TFile, TFolder } from "obsidian";
 import { ANNOTATION_FOLDER } from "./annotations";
 
 export interface HighlightColor { id: string; name: string; value: string }
@@ -46,10 +46,17 @@ export function colorOf(settings: ReaderSettings, id: string): HighlightColor {
 /** How many colors at the start of the list are the fixed defaults. */
 export const FIXED_COLORS = DEFAULT_COLORS.length;
 
+function isHighlightColor(value: unknown): value is HighlightColor {
+  if (typeof value !== "object" || value === null) return false;
+  return "id" in value && typeof value.id === "string" && /^[\w-]+$/.test(value.id)
+    && "name" in value && typeof value.name === "string"
+    && "value" in value && typeof value.value === "string" && /^#[0-9a-f]{6}$/i.test(value.value);
+}
+
 export function loadSettings(saved: unknown): ReaderSettings {
   const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown };
   const valid = Array.isArray(data.colors)
-    ? data.colors.filter((c): c is HighlightColor => typeof c?.id === "string" && /^[\w-]+$/.test(c.id) && typeof c.name === "string" && typeof c.value === "string" && /^#[0-9a-f]{6}$/i.test(c.value))
+    ? data.colors.filter(isHighlightColor)
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
   const colors = valid.filter((color, index) => valid.findIndex(other => other.id === color.id) === index);
   // The defaults come first even if earlier settings moved or removed them, keeping any name and color given to them.
@@ -96,123 +103,129 @@ export class ReaderSettingTab extends PluginSettingTab {
     super.hide();
   }
 
-  display(): void {
+  update(): void {
     if (this.dragging) { this.redrawAfterDrag = true; return; }
-    const { containerEl } = this;
+    super.update();
+  }
+
+  getSettingDefinitions(): SettingDefinitionItem[] {
     const { settings } = this.host;
-    containerEl.empty();
+    return [
+      { type: "group", heading: "Reader", items: [
+        {
+          name: "Show the book note with PDFs",
+          desc: "Open the PDF's book note whenever a PDF opens in Reader. When off, open it with the book note button, the A key, or the Toggle book note command.",
+          render: row => { row.addToggle(toggle => toggle.setValue(settings.showAnnotationsOnOpen).onChange(async value => {
+            settings.showAnnotationsOnOpen = value;
+            await this.host.saveSettings();
+          })); },
+        },
+        {
+          name: "Open book notes",
+          desc: "Where the book note opens from the button, the A and N keys, and Note. Right-click the book note button to open it in the other place once.",
+          render: row => { row.addDropdown(dropdown => dropdown.addOption("sidebar", "In the right sidebar").addOption("beside", "Beside the PDF")
+            .setValue(settings.notePlace).onChange(async value => {
+              settings.notePlace = value === "beside" ? "beside" : "sidebar";
+              await this.host.saveSettings();
+            })); },
+        },
+      ] },
+      { type: "group", heading: "Highlight colors", items: [
+        { name: "Palette order", desc: "Primary and Secondary always come first. Rename or recolor any color; reorder added colors with their handles or arrows." },
+        ...settings.colors.map((color, index) => ({
+          name: `${color.name} highlight color`,
+          render: (row: Setting) => this.renderColor(row, color, index),
+        })),
+        {
+          name: "Add highlight color",
+          desc: "Highlights in a removed color turn gray until recolored.",
+          render: row => { row.addButton(button => button.setButtonText("Add color").setCta().onClick(async () => {
+            settings.colors.push({ id: `color-${Date.now().toString(36)}`, name: "New color", value: "#b39ddb" });
+            await this.host.saveSettings();
+            this.update();
+            this.containerEl.querySelectorAll<HTMLInputElement>(".reader-color-setting input[type=text]").item(settings.colors.length - 1)?.select();
+          })); },
+        },
+      ] },
+      { type: "group", heading: "Book notes", items: [
+        {
+          name: "Book notes folder", desc: "Where new book notes are created. Existing notes stay where they are.",
+          render: row => { row.addText(text => {
+            text.setPlaceholder(NOTES_FOLDER).setValue(settings.notesFolder);
+            const apply = (value: string) => { settings.notesFolder = cleanFolder(value) ?? NOTES_FOLDER; text.setValue(settings.notesFolder); };
+            new FolderSuggest(this.app, text.inputEl, folder => { apply(folder); void this.host.saveSettings(); });
+            this.saveOnLeave(text.inputEl, apply);
+          }); },
+        },
+        {
+          name: "Book note template",
+          desc: "A note whose text starts each book note. {{title}}, {{source}}, and {{date}} are filled in. Leave empty for a title and source link.",
+          render: row => { row.addText(text => {
+            text.setPlaceholder("Templates/Book note.md").setValue(settings.noteTemplate);
+            const apply = (value: string) => { settings.noteTemplate = cleanFolder(value) ?? ""; text.setValue(settings.noteTemplate); };
+            new NoteSuggest(this.app, text.inputEl, path => { apply(path); void this.host.saveSettings(); });
+            this.saveOnLeave(text.inputEl, apply);
+          }); },
+        },
+      ] },
+      { type: "group", heading: "Storage", items: [{
+        name: "Annotation folder",
+        desc: "Where highlight positions and colors are saved as JSON. The default .reader-annotations folder is hidden from the file list and search. Obsidian Sync skips hidden folders; choose a visible folder to use it. Changing this folder moves existing records.",
+        render: row => { row.addText(text => {
+          let pending = settings.folder;
+          let committing = Promise.resolve();
+          const commit = () => committing = committing.then(async () => {
+            const folder = cleanFolder(pending);
+            if (!folder) new Notice("Choose a folder inside the vault for annotations.");
+            else if (folder !== settings.folder) await this.host.moveAnnotations(folder);
+            text.setValue(pending = settings.folder);
+          });
+          text.setPlaceholder(ANNOTATION_FOLDER).setValue(settings.folder).onChange(value => { pending = value; });
+          new FolderSuggest(this.app, text.inputEl, folder => { pending = folder; void commit(); });
+          text.inputEl.addEventListener("blur", () => void commit());
+          text.inputEl.addEventListener("keydown", event => { if (event.key === "Enter") text.inputEl.blur(); });
+        }); },
+      }] },
+    ];
+  }
 
-    new Setting(containerEl).setName("Reader").setHeading();
-    new Setting(containerEl)
-      .setName("Show the book note with PDFs")
-      .setDesc("Open the PDF's book note whenever a PDF opens in Reader. When off, open it with the book note button in the Reader header, the A key, or the Toggle book note command.")
-      .addToggle(toggle => toggle.setValue(settings.showAnnotationsOnOpen).onChange(async value => {
-        settings.showAnnotationsOnOpen = value;
+  private saveOnLeave(input: HTMLInputElement, apply: (value: string) => void): void {
+    input.addEventListener("blur", () => { apply(input.value); void this.host.saveSettings(); });
+    input.addEventListener("keydown", event => { if (event.key === "Enter") input.blur(); });
+  }
+
+  private renderColor(row: Setting, color: HighlightColor, index: number): void {
+    const { settings } = this.host;
+    const fixed = index < FIXED_COLORS;
+    row
+      .addColorPicker(picker => picker.setValue(color.value).onChange(async value => {
+        color.value = value;
+        await this.host.saveSettings();
+      }))
+      .addText(text => text.setPlaceholder("Color name").setValue(color.name).onChange(async value => {
+        color.name = value.trim() || "Untitled color";
         await this.host.saveSettings();
       }));
-    new Setting(containerEl)
-      .setName("Open book notes")
-      .setDesc("Where the book note opens from the button, the A and N keys, and Note. Right-click the book note button to open it in the other place once.")
-      .addDropdown(dropdown => dropdown
-        .addOption("sidebar", "In the right sidebar")
-        .addOption("beside", "Beside the PDF")
-        .setValue(settings.notePlace)
-        .onChange(async value => {
-          settings.notePlace = value === "beside" ? "beside" : "sidebar";
-          await this.host.saveSettings();
-        }));
-
-    new Setting(containerEl).setName("Highlight colors").setHeading()
-      .setDesc("Colors appear in the selection popup in this order. Primary and Secondary always come first; you can change their color and name. Colors you add follow them, and you can reorder them with the handles or arrows. Give each one a meaning, such as “Key idea” or “Question”.");
-    settings.colors.forEach((color, index) => {
-      const fixed = index < FIXED_COLORS;
-      const row = new Setting(containerEl)
-        .addColorPicker(picker => picker.setValue(color.value).onChange(async value => {
-          color.value = value;
-          await this.host.saveSettings();
-        }))
-        .addText(text => text.setPlaceholder("Color name").setValue(color.name).onChange(async value => {
-          color.name = value.trim() || "Untitled color";
-          await this.host.saveSettings();
-        }))
-      row.settingEl.addClass("reader-color-setting");
-      if (fixed) {
-        // Invisible stand-ins for the buttons keep the name fields the same width in every row.
-        for (let i = 0; i < 3; i++) row.addExtraButton(button => { button.extraSettingsEl.addClass("reader-color-placeholder"); button.extraSettingsEl.setAttr("aria-hidden", "true"); button.extraSettingsEl.tabIndex = -1; });
-        const lock = row.settingEl.createDiv({ cls: "reader-color-lock" });
-        setIcon(lock, "lock");
-        lock.createSpan({ cls: "reader-visually-hidden", text: `${color.name} is a default color. It always stays in this place.` });
-        row.settingEl.prepend(lock);
-        return;
-      }
-      row
-        .addExtraButton(button => button.setIcon("arrow-up").setTooltip("Move up").setDisabled(index === FIXED_COLORS).onClick(() => this.move(index, index - 1)))
-        .addExtraButton(button => button.setIcon("arrow-down").setTooltip("Move down").setDisabled(index === settings.colors.length - 1).onClick(() => this.move(index, index + 1)))
-        .addExtraButton(button => button.setIcon("trash-2").setTooltip("Remove color").onClick(async () => {
-          settings.colors.splice(index, 1);
-          await this.host.saveSettings();
-          this.display();
-        }));
-      row.settingEl.addClass("is-movable");
-      this.addHandle(row.settingEl, color.id, color.name);
-    });
-    new Setting(containerEl)
-      .setDesc("Existing highlights in a removed color turn gray. Add the color again or pick a new color from the highlight to restore them.")
-      .addButton(button => button.setButtonText("Add color").setCta().onClick(async () => {
-        settings.colors.push({ id: `color-${Date.now().toString(36)}`, name: "New color", value: "#b39ddb" });
+    row.settingEl.addClass("reader-color-setting");
+    if (fixed) {
+      // Invisible stand-ins for the buttons keep the name fields the same width in every row.
+      for (let i = 0; i < 3; i++) row.addExtraButton(button => { button.extraSettingsEl.addClass("reader-color-placeholder"); button.extraSettingsEl.setAttr("aria-hidden", "true"); button.extraSettingsEl.tabIndex = -1; });
+      const lock = row.settingEl.createDiv({ cls: "reader-color-lock" });
+      setIcon(lock, "lock");
+      lock.createSpan({ cls: "reader-visually-hidden", text: `${color.name} is a default color. It always stays in this place.` });
+      row.settingEl.prepend(lock);
+      return;
+    }
+    row
+      .addExtraButton(button => button.setIcon("arrow-up").setTooltip("Move up").setDisabled(index === FIXED_COLORS).onClick(() => this.move(index, index - 1)))
+      .addExtraButton(button => button.setIcon("arrow-down").setTooltip("Move down").setDisabled(index === settings.colors.length - 1).onClick(() => this.move(index, index + 1)))
+      .addExtraButton(button => button.setIcon("trash-2").setTooltip("Remove color").onClick(async () => {
+        settings.colors.splice(index, 1);
         await this.host.saveSettings();
-        this.display();
-        containerEl.querySelectorAll<HTMLInputElement>(".reader-color-setting input[type=text]").item(settings.colors.length - 1)?.select();
+        this.update();
       }));
-
-    new Setting(containerEl).setName("Book notes").setHeading()
-      .setDesc("Each PDF gets one note that holds a quote for every highlight and everything you write about it. The note is yours: the plugin adds a section for each new highlight and removes the section of a deleted highlight only when nothing is written under it.");
-    const saveOnLeave = (input: HTMLInputElement, apply: (value: string) => void) => {
-      input.addEventListener("blur", () => { apply(input.value); void this.host.saveSettings(); });
-      input.addEventListener("keydown", event => { if (event.key === "Enter") input.blur(); });
-    };
-    new Setting(containerEl)
-      .setName("Book notes folder")
-      .setDesc("Where new book notes are created. Existing notes stay where they are.")
-      .addText(text => {
-        text.setPlaceholder(NOTES_FOLDER).setValue(settings.notesFolder);
-        const apply = (value: string) => { settings.notesFolder = cleanFolder(value) ?? NOTES_FOLDER; text.setValue(settings.notesFolder); };
-        new FolderSuggest(this.app, text.inputEl, folder => { apply(folder); void this.host.saveSettings(); });
-        saveOnLeave(text.inputEl, apply);
-      });
-    new Setting(containerEl)
-      .setName("Book note template")
-      .setDesc("A note whose text starts each new book note. {{title}}, {{source}}, and {{date}} are filled in, and a source link is added to its properties. Leave empty for a title and a source link.")
-      .addText(text => {
-        text.setPlaceholder("Templates/Book note.md").setValue(settings.noteTemplate);
-        const apply = (value: string) => { settings.noteTemplate = cleanFolder(value) ?? ""; text.setValue(settings.noteTemplate); };
-        new NoteSuggest(this.app, text.inputEl, path => { apply(path); void this.host.saveSettings(); });
-        saveOnLeave(text.inputEl, apply);
-      });
-
-    new Setting(containerEl).setName("Storage").setHeading();
-    let pending = settings.folder;
-    // Choosing a suggestion and leaving the field both commit; run them one after another.
-    let committing = Promise.resolve();
-    const commit = (input: HTMLInputElement) => committing = committing.then(async () => {
-      const folder = cleanFolder(pending);
-      if (!folder) {
-        new Notice("Choose a folder inside the vault for annotations.");
-        input.value = pending = settings.folder;
-        return;
-      }
-      if (folder !== settings.folder) await this.host.moveAnnotations(folder);
-      input.value = pending = settings.folder;
-    });
-    new Setting(containerEl)
-      .setName("Annotation folder")
-      .setDesc("Where the plugin keeps each PDF's highlight positions and colors (JSON). Your writing lives in the book notes. The default, .reader-annotations, is hidden, so it stays out of the file list and search; tools that sync hidden files, such as Git or Syncthing, still copy it, but Obsidian Sync doesn't. Changing it moves existing records.")
-      .addText(text => {
-        text.setPlaceholder(ANNOTATION_FOLDER).setValue(settings.folder).onChange(value => { pending = value; });
-        new FolderSuggest(this.app, text.inputEl, folder => { pending = folder; void commit(text.inputEl); });
-        text.inputEl.addEventListener("blur", () => void commit(text.inputEl));
-        text.inputEl.addEventListener("keydown", event => { if (event.key === "Enter") text.inputEl.blur(); });
-      });
+    row.settingEl.addClass("is-movable");
+    this.addHandle(row.settingEl, color.id, color.name);
   }
 
   /**
@@ -252,11 +265,11 @@ export class ReaderSettingTab extends PluginSettingTab {
       const update = () => {
         const dy = Math.max(-index * step, Math.min((rows.length - 1 - index) * step, pointerY - startY + scroller.scrollTop - startScroll));
         target = index + Math.round(dy / step);
-        row.style.transform = `translateY(${dy}px)`;
+        row.setCssProps({ "--reader-row-offset": `${dy}px` });
         rows.forEach((other, i) => {
           if (other === row) return;
           const shift = i > index && i <= target ? -step : i < index && i >= target ? step : 0;
-          other.style.transform = shift ? `translateY(${shift}px)` : "";
+          other.setCssProps({ "--reader-row-offset": `${shift}px` });
         });
       };
       const onMove = (move: PointerEvent) => { pointerY = move.clientY; update(); };
@@ -274,12 +287,12 @@ export class ReaderSettingTab extends PluginSettingTab {
         scroller.removeEventListener("scroll", update);
         if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
         this.containerEl.removeClass("is-reordering");
-        rows.forEach(other => { other.style.transform = ""; other.removeClass("is-dragging"); });
+        rows.forEach(other => { other.setCssProps({ "--reader-row-offset": "" }); other.removeClass("is-dragging"); });
         this.dragging = false;
         // Settings changed elsewhere during the drag replace the list, so find the color again by its ID.
         const from = indexOf();
         if (from >= 0 && target !== index) void this.move(from, FIXED_COLORS + target);
-        else if (this.redrawAfterDrag) this.display();
+        else if (this.redrawAfterDrag) this.update();
         this.redrawAfterDrag = false;
       };
       handle.addEventListener("pointermove", onMove);
@@ -297,7 +310,7 @@ export class ReaderSettingTab extends PluginSettingTab {
     const [color] = colors.splice(from, 1);
     colors.splice(to, 0, color!);
     // Redraw before saving, so a dropped row never shows in its old place.
-    this.display();
+    this.update();
     if (refocus) this.containerEl.querySelectorAll<HTMLElement>(".reader-color-handle").item(to - FIXED_COLORS)?.focus();
     await this.host.saveSettings();
   }

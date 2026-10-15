@@ -17,7 +17,7 @@ export class SavedReadingState<Settings extends object> {
   private pending = new Map<string, number>();
   private revision = 0;
   private reloadToken = 0;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private timer: number | undefined;
   private writing: Promise<void> | null = null;
   private unsaved = false;
   private closed = false;
@@ -108,7 +108,7 @@ export class SavedReadingState<Settings extends object> {
       let snapshotRevision: number;
       do {
         snapshotRevision = this.revision;
-        const snapshot = JSON.parse(JSON.stringify({ ...this.settings, positions: Object.fromEntries(this.positions) }));
+        const snapshot: unknown = JSON.parse(JSON.stringify({ ...this.settings, positions: Object.fromEntries(this.positions) }));
         await this.storage.write(snapshot);
         for (const [path, revision] of this.pending) if (revision <= snapshotRevision) this.pending.delete(path);
       } while (snapshotRevision !== this.revision);
@@ -122,13 +122,13 @@ export class SavedReadingState<Settings extends object> {
   }
 
   private cancelScheduledWrite(): void {
-    clearTimeout(this.timer);
+    window.clearTimeout(this.timer);
     this.timer = undefined;
   }
 
   private schedule(): void {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => { void this.flush().catch(this.reportError); }, WRITE_DELAY);
+    window.clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => { void this.flush().catch(this.reportError); }, WRITE_DELAY);
   }
 }
 

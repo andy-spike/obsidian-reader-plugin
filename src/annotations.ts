@@ -65,7 +65,7 @@ export class AnnotationStore {
   private listeners = new Set<(record: AnnotationRecord) => void>();
   private states = new Map<string, SaveState>();
   private revisions = new Map<string, number>();
-  private retries = new Map<string, ReturnType<typeof setTimeout>>();
+  private retries = new Map<string, number>();
   private closed = false;
   folder: string;
   constructor(private storage: Storage, options: { folder?: string } = {}) {
@@ -79,7 +79,7 @@ export class AnnotationStore {
   private notify(record: AnnotationRecord): void { this.listeners.forEach(listener => listener(record)); }
   dispose(): void {
     this.closed = true;
-    this.retries.forEach(timer => clearTimeout(timer));
+    this.retries.forEach(timer => window.clearTimeout(timer));
     this.retries.clear();
     this.listeners.clear();
   }
@@ -139,7 +139,7 @@ export class AnnotationStore {
     const id = record.documentId;
     const revision = (this.revisions.get(id) ?? 0) + 1;
     this.revisions.set(id, revision);
-    clearTimeout(this.retries.get(id));
+    window.clearTimeout(this.retries.get(id));
     this.retries.delete(id);
     this.states.set(id, { saving: true, error: null });
     this.notify(record);
@@ -157,7 +157,7 @@ export class AnnotationStore {
         if (this.revisions.get(id) === revision) {
           this.states.set(id, { saving: false, error: error instanceof Error ? error.message : String(error) });
           this.notify(record);
-          if (!this.closed) this.retries.set(id, setTimeout(() => {
+          if (!this.closed) this.retries.set(id, window.setTimeout(() => {
             this.retries.delete(id);
             void this.save(record).catch(() => {});
           }, 2000));

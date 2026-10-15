@@ -8,9 +8,16 @@ import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, Render
 import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
 import { checkMenu, colorMenu, deleteAnnotation } from "./ui";
 import { OutlineModal } from "./outline-modal";
-import type { OutlineNode } from "./components/OutlineTree.svelte";
+import type { OutlineNode } from "./outline";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
 import { mount, unmount } from "svelte";
+
+interface PdfOutlineItem { title: string; dest: string | unknown[] | null; items: PdfOutlineItem[] }
+
+function isPdfReference(value: unknown): value is { num: number; gen: number } {
+  return typeof value === "object" && value !== null && "num" in value && "gen" in value
+    && typeof value.num === "number" && typeof value.gen === "number";
+}
 
 export const READER_VIEW = "reader-plugin-pdf";
 /** PDF points to CSS pixels, so 100% matches the printed page size like other PDF viewers. */
@@ -195,7 +202,7 @@ export class ReaderView extends FileView {
       window.clearTimeout(this.openingTimer);
       window.clearTimeout(this.messageTimer);
       window.clearTimeout(this.toastTimer);
-      if (this.frame) cancelAnimationFrame(this.frame);
+      if (this.frame) window.cancelAnimationFrame(this.frame);
     });
     this.register(this.host.store.subscribe(record => { if (record === this.record) this.refreshAnnotations(); }));
     this.bindSelection();
@@ -205,12 +212,12 @@ export class ReaderView extends FileView {
   private buildControls(): void {
     const toStage = () => this.stage.focus({ preventScroll: true });
     this.controls = mount(ReaderControls, { target: this.contentEl, props: {
-      step: delta => this.step(delta),
-      goToPage: page => this.goToPage(page),
+      step: (delta: 1 | -1) => this.step(delta),
+      goToPage: (page: number) => this.goToPage(page),
       done: toStage,
-      zoomBy: direction => this.zoomBy(direction),
+      zoomBy: (direction: 1 | -1) => this.zoomBy(direction),
       reset: () => this.resetZoom(),
-      zoomMenu: rect => {
+      zoomMenu: (rect: DOMRect) => {
         const menu = checkMenu();
         const option = (title: string, checked: boolean, choose: () => void) => menu.addItem(item => item.setTitle(title).setChecked(checked).onClick(choose));
         option("Fit width", this.fit === "width", () => this.setZoom(this.fitZoom("width"), "width"));
@@ -225,7 +232,7 @@ export class ReaderView extends FileView {
         const dom = (menu as Menu & { dom?: HTMLElement }).dom;
         if (dom) {
           const max = doc.documentElement.clientWidth - dom.offsetWidth - 8;
-          dom.style.left = `${Math.max(8, Math.min(max, rect.left + (rect.width - dom.offsetWidth) / 2))}px`;
+          dom.setCssStyles({ left: `${Math.max(8, Math.min(max, rect.left + (rect.width - dom.offsetWidth) / 2))}px` });
         }
       },
     } });
@@ -482,7 +489,7 @@ export class ReaderView extends FileView {
 
   private scheduleUpdate(): void {
     if (this.frame) return;
-    this.frame = requestAnimationFrame(() => {
+    this.frame = window.requestAnimationFrame(() => {
       this.frame = 0;
       this.update();
     });
@@ -803,7 +810,7 @@ export class ReaderView extends FileView {
     let hoverFrame = 0;
     this.registerDomEvent(this.stage, "pointermove", event => {
       if (this.pointer.down || hoverFrame) return;
-      hoverFrame = requestAnimationFrame(() => {
+      hoverFrame = window.requestAnimationFrame(() => {
         hoverFrame = 0;
         this.setHovered(this.annotationAt(event.clientX, event.clientY)?.annotation.id ?? null);
       });
@@ -980,16 +987,16 @@ export class ReaderView extends FileView {
     if (!outline?.length) { this.toast("This PDF has no table of contents."); return; }
     const nodes: OutlineNode[] = [];
     const targets: Promise<{ page: number; offset: number } | null>[] = [];
-    const walk = (items: typeof outline, depth: number, parent: number | null) => {
+    const walk = (items: readonly PdfOutlineItem[], depth: number, parent: number | null) => {
       for (const item of items) {
         const node: OutlineNode = { id: nodes.length, title: item.title.trim() || "Untitled", depth, parent, children: [] };
         nodes.push(node);
         targets.push(this.resolveDestination(pdf, item.dest).catch(() => null));
         if (parent !== null) nodes[parent]!.children.push(node.id);
-        if (item.items?.length) walk(item.items, depth + 1, node.id);
+        if (item.items.length) walk(item.items, depth + 1, node.id);
       }
     };
-    walk(outline, 0, null);
+    walk(outline as PdfOutlineItem[], 0, null);
     const resolved = await Promise.all(targets);
     resolved.forEach((target, id) => { nodes[id]!.page = target?.page; });
     if (pdf !== this.pdf) return;
@@ -1003,14 +1010,17 @@ export class ReaderView extends FileView {
   }
 
   private async resolveDestination(pdf: PDFDocumentProxy, dest: string | unknown[] | null): Promise<{ page: number; offset: number } | null> {
-    const explicit = typeof dest === "string" ? await pdf.getDestination(dest) : dest;
+    const explicit: unknown = typeof dest === "string" ? await pdf.getDestination(dest) : dest;
     if (!Array.isArray(explicit)) return null;
-    const ref = explicit[0];
+    const destination: unknown[] = explicit;
+    const ref = destination[0];
+    if (typeof ref !== "number" && !isPdfReference(ref)) return null;
     const index = typeof ref === "number" ? ref : await pdf.getPageIndex(ref).catch(() => null);
     if (index === null) return null;
     const slot = this.slots[index];
     // XYZ destinations carry a top coordinate in PDF space, measured from the bottom of the page.
-    const top = explicit[1]?.name === "XYZ" && typeof explicit[3] === "number" ? explicit[3] : null;
+    const mode = destination[1];
+    const top = typeof mode === "object" && mode !== null && "name" in mode && mode.name === "XYZ" && typeof destination[3] === "number" ? destination[3] : null;
     return { page: index + 1, offset: top !== null && slot ? Math.max(0, Math.min(1, (slot.height - top) / slot.height)) : 0 };
   }
 }

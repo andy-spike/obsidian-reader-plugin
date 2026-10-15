@@ -17,7 +17,7 @@ const licenseFiles = [
 const licenseSections = await Promise.all(licenseFiles.map(async ([label, path]) =>
   `${label}\n\n${await readFile(new URL(path, import.meta.url), "utf8")}`));
 const licenseBanner = `/*!\n${licenseSections.join("\n\n----------------------------------------\n\n")}\n*/`;
-await setupVault();
+if (!production) await setupVault();
 const context = await esbuild.context({
   entryPoints: ["src/main.ts"],
   bundle: true,
@@ -47,7 +47,7 @@ const context = await esbuild.context({
     name: "deploy-to-dev-vault",
     setup(build) {
       build.onEnd(async (result) => {
-        if (result.errors.length === 0) await deployPlugin();
+        if (!production && result.errors.length === 0) await deployPlugin();
       });
     },
   }],
