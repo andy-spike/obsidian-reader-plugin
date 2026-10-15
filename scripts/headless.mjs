@@ -4,9 +4,10 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, openSync } from "node:fs";
 import { copyFile, cp, link, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { headlessConfig, root, setupVault, vaultPath as developmentVaultPath } from "./dev-vault.mjs";
+import { obsidianConfigDir } from "./obsidian-vaults.mjs";
 
 const testVault = process.env.READING_DESK_TEST_VAULT;
 const vaultPath = testVault ? resolve(testVault) : developmentVaultPath;
@@ -68,7 +69,7 @@ async function running() {
 /** Obsidian installs app updates into its data folder. Sharing the newest one from the everyday install keeps both on the same version.
  * Obsidian skips symbolic links there, so it is hard-linked, or copied across file systems. */
 async function linkLatestApp() {
-  const config = process.platform === "darwin" ? join(homedir(), "Library", "Application Support", "obsidian") : join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "obsidian");
+  const config = obsidianConfigDir();
   const version = name => (name.match(/^obsidian-(\d+)\.(\d+)\.(\d+)\.asar$/) ?? []).slice(1).map(Number);
   const newer = (a, b) => { for (let i = 0; i < 3; i++) if (version(a)[i] !== version(b)[i]) return version(a)[i] > version(b)[i] ? a : b; return a; };
   const asars = (await readdir(config).catch(() => [])).filter(name => version(name).length === 3);
@@ -76,6 +77,18 @@ async function linkLatestApp() {
   const latest = asars.reduce(newer);
   for (const name of await readdir(dataDir)) if (version(name).length === 3 && name !== latest) await rm(join(dataDir, name), { force: true });
   if (!existsSync(join(dataDir, latest))) await link(join(config, latest), join(dataDir, latest)).catch(() => copyFile(join(config, latest), join(dataDir, latest)));
+}
+
+/**
+ * On Linux, Obsidian replaces the command line socket in XDG_RUNTIME_DIR when it starts, whatever its data folder.
+ * A private runtime folder keeps the everyday Obsidian's `obsidian` CLI, which `pnpm dev:open` uses, connected to it.
+ * The folder is short because socket paths are limited to 108 bytes.
+ */
+async function headlessEnvironment() {
+  if (process.platform !== "linux") return process.env;
+  const runtimeDir = join(tmpdir(), `reading-desk-headless-${createHash("sha256").update(dataDir).digest("hex").slice(0, 12)}`);
+  await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+  return { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
 }
 
 async function start() {
@@ -96,7 +109,7 @@ async function start() {
   const log = openSync(join(dataDir, "obsidian.log"), "a");
   const child = spawn(findObsidian(), [
     "--no-sandbox", "--ozone-platform=headless", `--user-data-dir=${dataDir}`, "--remote-debugging-port=0",
-  ], { detached: true, stdio: ["ignore", log, log] });
+  ], { detached: true, stdio: ["ignore", log, log], env: await headlessEnvironment() });
   child.unref();
   await writeFile(pidFile, String(child.pid));
   let state = null;

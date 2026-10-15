@@ -25,7 +25,13 @@ The vault lives at `.dev-vault/Reader Plugin Dev - <checkout-directory>/`. On ma
 
 The vault keeps its original name after the rename to Reading Desk. Setup enables the new plugin ID, `reading-desk`, and copies settings from `reader-plugin` when the new settings file does not exist. It preserves the old plugin folder. Internal view IDs and the `obsidian://reader-plugin` passage protocol stay stable so saved tabs and book-note links keep working.
 
-Run `npm run dev:open` or `pnpm dev:open` from the checkout you want to test. The command prepares that checkout's vault and opens it in Obsidian using its absolute vault path. It uses the system URI opener on Linux, macOS, and Windows. If Obsidian asks to trust the development vault, enable community plugins there. Reading Desk is already listed as enabled in its local config.
+Run `npm run dev:open` or `pnpm dev:open` from the checkout you want to test. The command prepares that checkout's vault and opens it in your Obsidian. Obsidian only opens vaults in its vault list (`obsidian.json` in its data folder), and a new worktree's vault is never in it, so the command adds it the first time:
+
+- If Obsidian already knows the vault, the command opens it by its vault ID with the system URI opener.
+- If Obsidian is running, the command uses the official Obsidian CLI (`obsidian eval`) to make the same request as **Open folder as vault**. Obsidian adds the vault to its list and opens it. This needs the CLI turned on in **Settings → General → Advanced**.
+- If Obsidian is closed, the command adds the vault to `obsidian.json` directly and opens it. It never edits that file while Obsidian runs, because Obsidian keeps the list in memory and would overwrite it.
+
+If none of these works, for example without the CLI, the command prints the folder and the **Open folder as vault** steps, and exits with an error. The first time a vault opens, Obsidian asks whether to trust its plugins. Trust them to enable community plugins there; Reading Desk is already listed as enabled in its local config.
 
 Setup also copies `Books/AI Engineering.pdf` from the main checkout's development vault into each worktree's vault. Git's common directory locates the main checkout, so this works with T3's worktree paths. The PDF stays outside Git. Each worktree receives an independent copy, and repeated setup preserves any existing copy. If the source is missing, setup prints its expected path and continues with the sample book. Put the PDF there and rerun `pnpm dev:setup` to copy it.
 
@@ -52,7 +58,7 @@ Use the matching vault name when you check another checkout.
 
 ## Headless checks
 
-`pnpm headless` runs a second, private Obsidian on this checkout's development vault, with no window. It never takes focus, so checks can run while you keep working, including in your own Obsidian. It uses the Obsidian you already have installed. If the launcher cannot find it, set `OBSIDIAN_APP` to the Obsidian executable or AppImage. The headless instance keeps its own app data in `.dev-vault/headless-obsidian/`.
+`pnpm headless` runs a second, private Obsidian on this checkout's development vault, with no window. It never takes focus, so checks can run while you keep working, including in your own Obsidian. It uses the Obsidian you already have installed. If the launcher cannot find it, set `OBSIDIAN_APP` to the Obsidian executable or AppImage. The headless instance keeps its own app data in `.dev-vault/headless-obsidian/`. On Linux it also gets its own runtime folder under the system temp directory. Otherwise it would take over the `obsidian` CLI socket from your everyday Obsidian, and `pnpm dev:open` would talk to the wrong instance.
 
 In the vault, it uses its own configuration folder, `.obsidian-headless/`. That folder starts as a copy of `.obsidian/` without the tab layout. Its tabs and plugin settings therefore never change your Obsidian's. Builds deploy the plugin to both folders. Notes, PDFs, and annotations are shared. It takes the newest app update from your everyday install, so both run the same Obsidian version. Commands talk to it over the Chrome DevTools Protocol:
 
