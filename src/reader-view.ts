@@ -72,6 +72,8 @@ export class ReaderView extends FileView {
   private zoom = 1;
   private fit: Fit = "width";
   private page = 1;
+  /** A requested page can share a scroll position with other pages near the end or at small zooms. */
+  private pageRequest: { page: number; top: number } | null = null;
   private restore: { page?: number; offset?: number; zoom?: unknown } | null = null;
   /** Last reading position measured while visible. Hidden tabs have no layout to measure. */
   private position: { page: number; offset: number } | null = null;
@@ -181,6 +183,7 @@ export class ReaderView extends FileView {
       if (this.stage.clientWidth === width && this.stage.clientHeight === height) return;
       width = this.stage.clientWidth;
       height = this.stage.clientHeight;
+      this.pageRequest = null;
       if (this.restore && this.pdf) this.applyRestore();
       else if (this.fit && this.pdf) this.setZoom(this.fitZoom(this.fit), this.fit);
       this.scheduleUpdate();
@@ -310,6 +313,7 @@ export class ReaderView extends FileView {
     this.loading = null;
     this.pdf = null;
     this.record = null;
+    this.pageRequest = null;
     this.passages = [];
     this.ready();
     await loading?.destroy();
@@ -347,8 +351,13 @@ export class ReaderView extends FileView {
     if (zoom === "page" || zoom === "width" || zoom === "fit") this.setZoom(this.fitZoom(zoom === "page" ? "page" : "width"), zoom === "page" ? "page" : "width", undefined, false);
     else if (typeof zoom === "number") this.setZoom(zoom, null, undefined, false);
     else this.setZoom(this.fit ? this.fitZoom(this.fit) : this.zoom, this.fit, undefined, false);
-    if (restore.page !== undefined) this.goToPage(restore.page, restore.offset ?? 0);
-    else this.scheduleUpdate();
+    if (restore.page !== undefined) {
+      this.goToPage(restore.page, restore.offset ?? 0);
+      // Saved page/offset describe the viewport's top, not a page explicitly chosen in the toolbar.
+      this.pageRequest = null;
+    } else {
+      this.scheduleUpdate();
+    }
   }
 
   // ---- Layout and navigation ----
@@ -381,6 +390,7 @@ export class ReaderView extends FileView {
       return;
     }
     this.stage.scrollTop = offset ? this.pageTop(slot) + offset * slot.el.offsetHeight : this.pageTop(slot) - 8;
+    this.pageRequest = { page: slot.number, top: this.stage.scrollTop };
     this.position = this.measurePosition();
     this.setCurrentPage(slot.number);
     this.scheduleUpdate();
@@ -399,6 +409,15 @@ export class ReaderView extends FileView {
     this.page = page;
     this.updateControls();
     this.app.workspace.requestSaveLayout();
+  }
+
+  private visiblePage(top: number, height: number): number {
+    // Keep explicit navigation until scrolling moves away from its actual, possibly clamped position.
+    if (this.pageRequest && Math.abs(top - this.pageRequest.top) <= 1) return this.pageRequest.page;
+    this.pageRequest = null;
+    if (top <= 1) return 1;
+    if (top + height >= this.stage.scrollHeight - 1) return this.slots.length;
+    return this.slots[this.slotAt(top + height * 0.3)]!.number;
   }
 
   private updateControls(): void {
@@ -434,6 +453,7 @@ export class ReaderView extends FileView {
     this.fit = fit;
     const unchanged = Math.abs(zoom - this.zoom) < 0.0005 && this.pages.style.getPropertyValue("--total-scale-factor");
     if (!unchanged) {
+      this.pageRequest = null;
       this.popup.hide();
       const view = this.stage.getBoundingClientRect();
       const ax = anchor ? anchor.x - view.left : this.stage.clientWidth / 2;
@@ -475,7 +495,7 @@ export class ReaderView extends FileView {
     if (!height) return;
     this.position = this.measurePosition();
     this.savePosition();
-    this.setCurrentPage(this.slots[this.slotAt(top + height * 0.3)]!.number);
+    this.setCurrentPage(this.visiblePage(top, height));
     this.updateControls();
     const first = this.slotAt(top - height), last = this.slotAt(top + height * 2);
     for (const slot of [...this.active]) if (slot.number - 1 < first - 2 || slot.number - 1 > last + 2) this.releasePage(slot);
@@ -676,6 +696,7 @@ export class ReaderView extends FileView {
     const slot = this.slots[annotation.page - 1];
     if (!slot) return;
     this.stage.scrollTop = this.pageTop(slot) + annotation.rects[0]!.y * slot.el.offsetHeight - this.stage.clientHeight * 0.3;
+    this.pageRequest = { page: slot.number, top: this.stage.scrollTop };
     this.setCurrentPage(slot.number);
     this.flashing = annotation.id;
     for (const s of this.active) this.drawMarks(s);
