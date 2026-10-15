@@ -15,7 +15,8 @@
     "dev:open": "node scripts/open-dev-vault.mjs",
     "headless": "node scripts/headless.mjs",
     "worktree:setup": "pnpm install --frozen-lockfile && pnpm build",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "test:e2e": "pnpm build && node scripts/e2e.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
