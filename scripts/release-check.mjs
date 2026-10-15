@@ -10,7 +10,8 @@ const bundle = await readFile(join(root, "main.js"), "utf8");
 for (const text of ["check-development-setup", "inspect-reading-context", ".dev-reload"]) {
   assert.ok(!bundle.includes(text), `Production bundle contains development code: ${text}`);
 }
-for (const file of ["LICENSE", "docs/licenses/pdfjs.txt", "docs/licenses/pdfjs-notice.txt", "docs/licenses/svelte.txt", "docs/licenses/clsx.txt", "docs/licenses/esm-env.txt"]) {
+const wasmLicenses = ["pdfjs-openjpeg", "openjpeg", "pdfjs-jbig2", "jbig2", "pdfjs-qcms", "qcms"].map(name => `docs/licenses/pdfjs-wasm/${name}.txt`);
+for (const file of ["LICENSE", "docs/licenses/pdfjs.txt", "docs/licenses/pdfjs-notice.txt", ...wasmLicenses, "docs/licenses/svelte.txt", "docs/licenses/clsx.txt", "docs/licenses/esm-env.txt"]) {
   assert.ok(bundle.includes(await readFile(join(root, file), "utf8")), `Missing bundled license: ${file}`);
 }
 

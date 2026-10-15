@@ -1,6 +1,7 @@
 // Runs against real, windowless Obsidian through the project's headless launcher.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { root } from "./dev-vault.mjs";
 import { samplePdf } from "./sample-pdf.mjs";
@@ -95,6 +96,43 @@ try {
     waitFor(`app.workspace.getLeavesOfType("reader-plugin-pdf").some(l => l.view.file?.path === ${JSON.stringify(source)} && l.view.getRecord())`, "PDF was not routed to Reader");
     activate();
     waitFor(`${reader()}.contentEl.querySelectorAll('.reader-page canvas').length === 2 && ${reader()}.contentEl.querySelectorAll('.textLayer').length === 2`, "Expected both PDF pages to render");
+  });
+
+  step("bundled decoders render JPEG 2000, CCITT, and JBIG2 images and apply ICC color profiles", () => {
+    // Without the decoders these images render blank, or with uncorrected color, and PDF.js reports no error.
+    const fixtures = [
+      { file: "jpeg2000.pdf", expectCenter: [230, 30, 60] },
+      { file: "ccitt.pdf", expectDarkShare: [0.4, 0.6] },
+      { file: "jbig2.pdf", expectDarkShare: [0.001, 1] },
+      // An uncorrected render shows [128, 64, 32].
+      { file: "icc-linear.pdf", expectCenter: [188, 137, 99] },
+    ];
+    for (const { file, expectCenter, expectDarkShare } of fixtures) {
+      const path = `${folder}/${file}`;
+      const pixels = evaluate(`
+        const buffer = Buffer.from(${JSON.stringify(readFileSync(join(root, "tests/fixtures/pdf-decoders", file)).toString("base64"))}, 'base64');
+        const file = await app.vault.createBinary(${JSON.stringify(path)}, buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        let canvas;
+        for (let i = 0; i < 150 && !(canvas = leaf.view.contentEl?.querySelector('.reader-page canvas')); i++) await new Promise(resolve => setTimeout(resolve, 100));
+        if (!canvas) throw new Error("Decoder fixture did not render: " + ${JSON.stringify(file)});
+        const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        let dark = 0;
+        for (let i = 0; i < data.length; i += 4) if (data[i] < 128 && data[i + 1] < 128 && data[i + 2] < 128) dark++;
+        const center = (Math.floor(canvas.height / 2) * canvas.width + Math.floor(canvas.width / 2)) * 4;
+        leaf.detach();
+        return { center: [...data.slice(center, center + 3)], darkShare: dark / (data.length / 4) };
+      `);
+      if (expectCenter) {
+        assert.ok(pixels.center.every((value, index) => Math.abs(value - expectCenter[index]) <= 4),
+          `${file}: center pixel ${JSON.stringify(pixels.center)}, expected about ${JSON.stringify(expectCenter)}`);
+      }
+      if (expectDarkShare) {
+        assert.ok(pixels.darkShare >= expectDarkShare[0] && pixels.darkShare <= expectDarkShare[1],
+          `${file}: ${(pixels.darkShare * 100).toFixed(1)}% dark pixels, expected ${expectDarkShare.map(share => share * 100).join("–")}%`);
+      }
+    }
   });
 
   step("page field, next/previous, zoom and reset work through real input", () => {

@@ -10,12 +10,22 @@ const licenseFiles = [
   ["Reading Desk - MIT", "LICENSE"],
   ["Third-party notices: PDF.js - Apache-2.0", "docs/licenses/pdfjs-notice.txt"],
   ["PDF.js license", "docs/licenses/pdfjs.txt"],
+  ["PDF.js OpenJPEG decoder - BSD-2-Clause", "docs/licenses/pdfjs-wasm/pdfjs-openjpeg.txt"],
+  ["OpenJPEG - BSD-2-Clause", "docs/licenses/pdfjs-wasm/openjpeg.txt"],
+  ["PDF.js JBIG2 decoder - Apache-2.0", "docs/licenses/pdfjs-wasm/pdfjs-jbig2.txt"],
+  ["PDFium JBIG2 - BSD-3-Clause and Apache-2.0", "docs/licenses/pdfjs-wasm/jbig2.txt"],
+  ["PDF.js qcms decoder - MIT", "docs/licenses/pdfjs-wasm/pdfjs-qcms.txt"],
+  ["qcms - MIT", "docs/licenses/pdfjs-wasm/qcms.txt"],
   ["Svelte - MIT", "docs/licenses/svelte.txt"],
   ["clsx - MIT", "docs/licenses/clsx.txt"],
   ["esm-env - MIT", "docs/licenses/esm-env.txt"],
 ];
-const licenseSections = await Promise.all(licenseFiles.map(async ([label, path]) =>
-  `${label}\n\n${await readFile(new URL(path, import.meta.url), "utf8")}`));
+const licenseSections = await Promise.all(licenseFiles.map(async ([label, path]) => {
+  const text = await readFile(new URL(path, import.meta.url), "utf8");
+  // A comment terminator would end the banner early and corrupt main.js.
+  if (text.includes("*/")) throw new Error(`${path} contains "*/"; remove the comment markers from the license copy.`);
+  return `${label}\n\n${text}`;
+}));
 const licenseBanner = `/*!\n${licenseSections.join("\n\n----------------------------------------\n\n")}\n*/`;
 if (!production) await setupVault();
 const context = await esbuild.context({
@@ -31,6 +41,8 @@ const context = await esbuild.context({
   define: { __DEV__: JSON.stringify(!production) },
   banner: { js: licenseBanner },
   legalComments: "inline",
+  // PDF.js's image and color decoders travel inside main.js; src/pdf-engine.ts serves them to the worker.
+  loader: { ".wasm": "base64" },
   logLevel: "info",
   // Svelte's browser build, so components mount in Obsidian's window rather than as server-rendered HTML.
   conditions: ["svelte", "browser"],
