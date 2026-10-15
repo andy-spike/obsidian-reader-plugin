@@ -17,7 +17,7 @@ const USAGE = `Usage: pnpm headless <command>
   start                  Launch the windowless Obsidian on this checkout's dev vault (no-op if running)
   stop                   Quit it
   status                 Show whether it is running
-  reload                 Reload Reader Plugin after a build
+  reload                 Reload Reading Desk after a build
   eval <expression>      Evaluate JavaScript in Obsidian (awaits promises) and print the result
   screenshot <file.png>  Save a screenshot
   hover <target>         Move the pointer to a CSS selector or x,y (real events: tooltips and :hover work)
@@ -99,7 +99,7 @@ async function start() {
   const ready = `(async () => {
     for (let i = 0; i < 150; i++) {
       document.querySelectorAll(".modal button").forEach(button => { if (button.textContent.includes("Trust author")) button.click(); });
-      if (window.app?.workspace?.layoutReady && app.plugins.plugins["reader-plugin"]) {
+      if (window.app?.workspace?.layoutReady && app.plugins.plugins["reading-desk"]) {
         require("@electron/remote").getCurrentWindow().setSize(${WIDTH}, ${HEIGHT});
         return true;
       }
@@ -120,7 +120,7 @@ async function start() {
     if (ok) return state;
     await wait(1000);
   }
-  throw new Error(`Obsidian started, but Reader Plugin did not load. See ${join(dataDir, "obsidian.log")}.`);
+  throw new Error(`Obsidian started, but Reading Desk did not load. See ${join(dataDir, "obsidian.log")}.`);
 }
 
 async function stop() {
@@ -178,8 +178,8 @@ async function drive(state) {
   return withPage(state.port, async ({ send, evaluate, point }) => {
     switch (command) {
       case "reload":
-        await evaluate(`(async () => { await app.plugins.disablePlugin("reader-plugin"); await app.plugins.enablePlugin("reader-plugin"); })()`);
-        return "Reloaded Reader Plugin.";
+        await evaluate(`(async () => { await app.plugins.disablePlugin("reading-desk"); await app.plugins.enablePlugin("reading-desk"); })()`);
+        return "Reloaded Reading Desk.";
       case "eval": {
         const value = await evaluate(argument);
         return typeof value === "string" ? value : JSON.stringify(value, null, 2);

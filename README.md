@@ -1,4 +1,4 @@
-# Reader Plugin
+# Reading Desk
 
 An Obsidian desktop plugin for reading PDFs with highlights and notes.
 
@@ -29,6 +29,12 @@ pnpm test
 ```
 
 The [development guide](docs/development.md) covers the development vault, watch mode, headless checks, and architecture.
+
+## License
+
+Reading Desk is licensed under the [MIT license](LICENSE).
+
+The plugin bundles [PDF.js](https://github.com/mozilla/pdf.js) under Apache 2.0 and [Svelte](https://github.com/sveltejs/svelte) under MIT. Their [license texts and notices](docs/licenses/README.md) are also included in the generated `main.js`, so they travel with the installed plugin.
 
 ## Documentation
 

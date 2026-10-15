@@ -1,9 +1,22 @@
 import esbuild from "esbuild";
 import esbuildSvelte from "esbuild-svelte";
 import { builtinModules } from "node:module";
+import { readFile } from "node:fs/promises";
 import { deployPlugin, setupVault } from "./scripts/dev-vault.mjs";
 
 const production = process.argv.includes("production");
+// Obsidian installs only the plugin assets, so license texts must travel inside main.js.
+const licenseFiles = [
+  ["Reading Desk - MIT", "LICENSE"],
+  ["Third-party notices: PDF.js - Apache-2.0", "docs/licenses/pdfjs-notice.txt"],
+  ["PDF.js license", "docs/licenses/pdfjs.txt"],
+  ["Svelte - MIT", "docs/licenses/svelte.txt"],
+  ["clsx - MIT", "docs/licenses/clsx.txt"],
+  ["esm-env - MIT", "docs/licenses/esm-env.txt"],
+];
+const licenseSections = await Promise.all(licenseFiles.map(async ([label, path]) =>
+  `${label}\n\n${await readFile(new URL(path, import.meta.url), "utf8")}`));
+const licenseBanner = `/*!\n${licenseSections.join("\n\n----------------------------------------\n\n")}\n*/`;
 await setupVault();
 const context = await esbuild.context({
   entryPoints: ["src/main.ts"],
@@ -15,6 +28,8 @@ const context = await esbuild.context({
   outfile: "main.js",
   sourcemap: production ? false : "inline",
   minify: production,
+  banner: { js: licenseBanner },
+  legalComments: "inline",
   logLevel: "info",
   // Svelte's browser build, so components mount in Obsidian's window rather than as server-rendered HTML.
   conditions: ["svelte", "browser"],

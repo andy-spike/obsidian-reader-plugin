@@ -1,6 +1,6 @@
 {
-  "id": "reader-plugin",
-  "name": "Reader Plugin",
+  "id": "reading-desk",
+  "name": "Reading Desk",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "Book reading context and notes for a local AI-assisted reading workflow.",

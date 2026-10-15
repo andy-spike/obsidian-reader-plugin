@@ -23,7 +23,9 @@ The plugin's own interface, including the highlight popup and the page and zoom 
 
 The vault lives at `.dev-vault/Reader Plugin Dev - <checkout-directory>/`. On main, the vault name is `Reader Plugin Dev - reader-plugin`. A checkout in a directory named `book-search` gets `Reader Plugin Dev - book-search`. Each vault has an original sample book and a reading note. Setup creates missing files and preserves existing notes and settings. To update existing fixture content, edit the note directly or create a fresh disposable vault.
 
-Run `npm run dev:open` or `pnpm dev:open` from the checkout you want to test. The command prepares that checkout's vault and opens it in Obsidian using its absolute vault path. It uses the system URI opener on Linux, macOS, and Windows. If Obsidian asks to trust the development vault, enable community plugins there. Reader Plugin is already listed as enabled in its local config.
+The vault keeps its original name after the rename to Reading Desk. Setup enables the new plugin ID, `reading-desk`, and copies settings from `reader-plugin` when the new settings file does not exist. It preserves the old plugin folder. Internal view IDs and the `obsidian://reader-plugin` passage protocol stay stable so saved tabs and book-note links keep working.
+
+Run `npm run dev:open` or `pnpm dev:open` from the checkout you want to test. The command prepares that checkout's vault and opens it in Obsidian using its absolute vault path. It uses the system URI opener on Linux, macOS, and Windows. If Obsidian asks to trust the development vault, enable community plugins there. Reading Desk is already listed as enabled in its local config.
 
 Setup also copies `Books/AI Engineering.pdf` from the main checkout's development vault into each worktree's vault. Git's common directory locates the main checkout, so this works with T3's worktree paths. The PDF stays outside Git. Each worktree receives an independent copy, and repeated setup preserves any existing copy. If the source is missing, setup prints its expected path and continues with the sample book. Put the PDF there and rerun `pnpm dev:setup` to copy it.
 
@@ -31,9 +33,9 @@ Edit plugin source in the worktree and run `pnpm dev` to deploy rebuilds into it
 
 ## Checking the setup
 
-In the command palette, run **Reader Plugin: Check development setup**. You should see a notice confirming that the plugin loaded. Open `Books/Sample book.md` in editing mode, select text, and run **Reader Plugin: Inspect reading context** to verify access to the selection.
+In the command palette, run **Reading Desk: Check development setup**. You should see a notice confirming that the plugin loaded. Open `Books/Sample book.md` in editing mode, select text, and run **Reading Desk: Inspect reading context** to verify access to the selection.
 
-The plugin makes no model calls at this stage. For the PDF workflow, open `Books/Sample reading book.pdf` with **Reader Plugin: Open PDF in Reader**, and follow the [runtime verification steps](pdf-reader.md#development-verification). Run `pnpm test` for annotation storage checks.
+The plugin makes no model calls at this stage. For the PDF workflow, open `Books/Sample reading book.pdf` with **Reading Desk: Open PDF in Reader**, and follow the [runtime verification steps](pdf-reader.md#development-verification). Run `pnpm test` for annotation storage checks.
 
 ## Reloading
 
@@ -42,8 +44,8 @@ Obsidian keeps a loaded plugin in memory. In a development vault, the plugin rel
 The first time, or when a vault has an older build loaded, reload the plugin once by turning it off and on in **Settings → Community plugins**. If the Obsidian CLI is enabled, you can also reload the main checkout's plugin with:
 
 ```sh
-obsidian vault="Reader Plugin Dev - reader-plugin" plugin:reload id=reader-plugin
-obsidian vault="Reader Plugin Dev - reader-plugin" commands filter=reader-plugin
+obsidian vault="Reader Plugin Dev - reader-plugin" plugin:reload id=reading-desk
+obsidian vault="Reader Plugin Dev - reader-plugin" commands filter=reading-desk
 ```
 
 Use the matching vault name when you check another checkout.
@@ -67,7 +69,7 @@ pnpm headless type 'a comment'
 pnpm headless stop
 ```
 
-Add `--window=Settings` to drive the settings window, which Obsidian opens separately. The headless Obsidian and your own Obsidian open the same vault folder. Reader Plugin's settings and reading positions follow each other's changes. Both write the vault's `.obsidian/workspace.json`, so each may pick up the other's last tab layout. If that gets in the way, close the development vault in your own Obsidian while headless checks run.
+Add `--window=Settings` to drive the settings window, which Obsidian opens separately. The headless Obsidian and your own Obsidian open the same vault folder. Reading Desk's settings and reading positions follow each other's changes. Both write the vault's `.obsidian/workspace.json`, so each may pick up the other's last tab layout. If that gets in the way, close the development vault in your own Obsidian while headless checks run.
 
 ## Architecture and tests
 

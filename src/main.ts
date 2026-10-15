@@ -27,7 +27,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   async onload(): Promise<void> {
     const data = await this.loadData();
     this.saved = new SavedReadingState(data, { read: () => this.loadData(), write: data => this.saveData(data) }, loadSettings,
-      error => console.error("Reader Plugin: could not save reading state.", error));
+      error => console.error("Reading Desk: could not save reading state.", error));
     this.settings = this.saved.settings;
     const store = this.store = new AnnotationStore(this.app.vault.adapter, { folder: this.settings.folder });
     const bookNotes = this.bookNotes = new BookNotes(this.app, store, () => this.settings);
@@ -276,7 +276,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       id: "check-development-setup",
       name: "Check development setup",
       callback: () => {
-        new Notice("Reader Plugin is loaded. The development setup is ready.");
+        new Notice("Reading Desk is loaded. The development setup is ready.");
       },
     });
 
@@ -378,9 +378,9 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     try {
       this.readers().forEach(reader => reader.savePosition());
     } catch (error) {
-      console.error("Reader Plugin: could not save reading positions while unloading.", error);
+      console.error("Reading Desk: could not save reading positions while unloading.", error);
     }
-    void this.saved?.close().catch(error => console.error("Reader Plugin: could not save reading state while unloading.", error));
+    void this.saved?.close().catch(error => console.error("Reading Desk: could not save reading state while unloading.", error));
     this.store?.dispose();
     // Open reader and sidebar tabs stay where they are; Obsidian restores them when the plugin loads again, such as after an update or a rebuild.
     stopPdfWorker();

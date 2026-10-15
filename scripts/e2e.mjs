@@ -16,7 +16,7 @@ const waitFor = (condition, message) => evaluate(`
   }
   throw new Error(${JSON.stringify(message)});
 `);
-const plugin = 'app.plugins.plugins["reader-plugin"]';
+const plugin = 'app.plugins.plugins["reading-desk"]';
 const folder = `Reader E2E ${Date.now()}`;
 let source = `${folder}/First.pdf`;
 const second = `${folder}/Second.pdf`;
@@ -138,7 +138,8 @@ try {
       assertPage(1);
       click('[aria-label="Next page"]');
       assertPage(2);
-      evaluate(`${reader()}.leaf.detach(); await app.workspace.getLeaf('tab').openFile(app.vault.getAbstractFileByPath(${JSON.stringify(source)})); return true;`);
+      // Keep a main tab group alive when this fixture is the only open document.
+      evaluate(`const next = app.workspace.getLeaf('tab'); ${reader()}.leaf.detach(); await next.openFile(app.vault.getAbstractFileByPath(${JSON.stringify(source)})); return true;`);
       waitFor(`app.workspace.getLeavesOfType('reader-plugin-pdf').some(l => l.view.file?.path === ${JSON.stringify(source)} && l.view.getRecord?.())`, 'Could not reopen the narrow Reader');
       activate();
       assertPage(2);
@@ -290,7 +291,7 @@ try {
 
   step("native viewer fallback stays native while new PDF tabs route to Reader", () => {
     activate();
-    evaluate(`app.commands.executeCommandById('reader-plugin:open-native-pdf'); return true;`);
+    evaluate(`app.commands.executeCommandById('reading-desk:open-native-pdf'); return true;`);
     waitFor(`app.workspace.getLeavesOfType('pdf').some(l => l.view.file?.path === ${JSON.stringify(source)})`, "Native viewer fallback failed");
     evaluate(`await app.workspace.getLeaf('tab').openFile(app.vault.getAbstractFileByPath(${JSON.stringify(second)})); return true;`);
     waitFor(`app.workspace.getLeavesOfType('reader-plugin-pdf').some(l => l.view.file?.path === ${JSON.stringify(second)} && l.view.getRecord())`, "New PDF did not route to Reader");

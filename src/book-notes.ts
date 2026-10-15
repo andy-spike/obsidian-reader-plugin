@@ -99,7 +99,7 @@ export class BookNotes {
     window.clearTimeout(this.timers.get(record.documentId));
     this.timers.set(record.documentId, window.setTimeout(() => {
       this.timers.delete(record.documentId);
-      void this.sync(record).catch(error => console.error("Reader Plugin: could not update the book note.", error));
+      void this.sync(record).catch(error => console.error("Reading Desk: could not update the book note.", error));
     }, 400));
   }
 
