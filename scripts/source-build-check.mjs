@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const directory = await mkdtemp(join(tmpdir(), "reading-desk-source-"));
-const inputs = ["src", "scripts", "tests", "docs", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "manifest.json", "versions.json", "styles.css", "LICENSE", "esbuild.config.mjs", "eslint.config.mjs", "tsconfig.json"];
+const inputs = ["src", "scripts", "tests", "docs", "licenses", "contributing", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "manifest.json", "versions.json", "styles.css", "LICENSE", "esbuild.config.mjs", "eslint.config.mjs", "tsconfig.json"];
 try {
   for (const input of inputs) await cp(join(root, input), join(directory, input), { recursive: true });
   for (const args of [["install", "--frozen-lockfile"], ["build"]]) {

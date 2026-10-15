@@ -1,6 +1,6 @@
 # Bundled dependency licenses
 
-Reading Desk's own code uses the [MIT license](../../LICENSE). Bundled dependencies retain their licenses:
+Reading Desk's own code uses the [MIT license](../LICENSE). Bundled dependencies retain their licenses:
 
 - PDF.js: [Apache 2.0](pdfjs.txt), with its [upstream copyright notice](pdfjs-notice.txt).
 - PDF.js image and color decoders, bundled as WebAssembly:
