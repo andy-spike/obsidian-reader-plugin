@@ -1,32 +1,59 @@
 # Reading Desk
 
-An Obsidian desktop plugin for reading PDFs with highlights and notes.
+Read PDFs in Obsidian, highlight passages, and write about them in Markdown notes that live in your vault.
 
-## Status
+Reading Desk is an Obsidian desktop plugin. It replaces the built-in PDF viewer with a continuous-scroll reader. Every PDF gets a book note, an ordinary Markdown note with a quote for each highlight and room to write under it.
 
-This is the first version. It is a PDF reader with annotations and comments. It can:
+## What you can do
 
-- Open PDFs from your vault in a continuous-scroll reader.
-- Highlight passages in colors you choose.
-- Keep a book note for each PDF, where you write comments about passages.
-- Save highlights and notes in your vault.
+- Read PDFs in one continuous scroll, with zoom, a table of contents, and page controls.
+- Pick up where you left off. Reading Desk remembers your page and zoom for each PDF.
+- Highlight text in colors you choose, one click per highlight or in highlight mode.
+- Write about a passage in the book note, under its quote. Click **Open passage** to jump back to it in the PDF.
+- Copy highlighted text, recolor highlights, and delete them with Undo.
 
-Read the [PDF reader guide](docs/pdf-reader.md) for details.
+## Install
 
-## Vault and clipboard access
+**Recommended.** In Obsidian, open **Settings → Community plugins**, turn on community plugins, select **Browse**, search for **Reading Desk**, then **Install** and **Enable**.
 
-Reading Desk lists vault PDFs for the document picker and Markdown note paths for template suggestions. When retiring an older annotation export, it reads Markdown notes to check for links before moving that export to the trash. It reads PDFs and templates, saves highlight records, and updates linked book notes inside the vault. These operations stay local; the current reader makes no network requests or telemetry calls.
+**Manual.** Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/andy-spike/obsidian-reader-plugin/releases/latest) into a `reading-desk` folder inside your vault's `.obsidian/plugins/` folder, then enable the plugin under **Settings → Community plugins**. The [getting started guide](docs/getting-started.md#install) has the full steps for both.
 
-The Copy action writes the selected passage or highlight text to the system clipboard. Reading Desk does not read the clipboard.
+It needs Obsidian desktop 1.14.4 or newer. It does not run on mobile.
+
+## Quick start
+
+1. Click a PDF in your vault. It opens in Reading Desk.
+2. Select a passage and click a color to highlight it.
+3. Click **Note** in the popup to highlight and start writing in the book note.
+
+## Guides
+
+| Guide | What it covers |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | Install, open a PDF, make a first highlight |
+| [Reading PDFs](docs/reading-pdfs.md) | Scrolling, zoom, table of contents, saved position |
+| [Highlights](docs/highlights.md) | Colors, highlight mode, editing, deleting |
+| [Book notes](docs/book-notes.md) | What the note holds and how to use it |
+| [Settings](docs/settings.md) | Palette, folders, templates |
+| [Keyboard shortcuts and commands](docs/shortcuts.md) | Every key and command |
+| [Files, sync, and renaming](docs/files-and-sync.md) | Where your data lives and how to sync it |
+
+## Privacy
+
+Reading Desk keeps everything in your vault and makes no network requests or telemetry calls.
+
+It lists your vault's PDFs for the document picker and Markdown note paths for template suggestions. It reads PDFs and templates, saves highlight records, and updates book notes. When it retires an older annotation export, it reads Markdown notes to check for links before moving that export to the trash.
+
+The Copy button writes the selected passage to the system clipboard. Reading Desk never reads the clipboard.
 
 ## Roadmap
 
-- [ ] EPUB support. Pending.
-- [ ] An AI reading assistant that answers questions about your books. Pending. You can use it with an API key or an existing subscription.
+- [ ] EPUB support
+- [ ] An AI reading assistant that answers questions about your books, using an API key or an existing subscription
 
-## Development
+## Contributing
 
-Requirements are Node.js 22 or newer, pnpm, and Obsidian desktop.
+You need Node.js 22 or newer, pnpm, and Obsidian desktop.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -34,18 +61,10 @@ pnpm build
 pnpm test
 ```
 
-The [development guide](docs/development.md) covers the development vault, watch mode, headless checks, and architecture.
+The [development guide](contributing/development.md) covers the development vault, watch mode, headless checks, architecture, and releases. Other contributor pages sit in [`contributing/`](contributing/).
 
 ## License
 
 Reading Desk is licensed under the [MIT license](LICENSE).
 
-The plugin bundles [PDF.js](https://github.com/mozilla/pdf.js) under Apache 2.0, its OpenJPEG, JBIG2, and qcms image and color decoders under their BSD, Apache 2.0, and MIT licenses, and [Svelte](https://github.com/sveltejs/svelte) under MIT. Their [license texts and notices](docs/licenses/README.md) are also included in the generated `main.js`, so they travel with the installed plugin.
-
-## Documentation
-
-- [Product direction](docs/product-direction.md) describes the intended reading workflow.
-- [PDF reader guide](docs/pdf-reader.md) covers features, the storage format, and runtime checks.
-- [Reading workflow plan](docs/reading-workflow-plan.md) records planned decisions and acceptance targets. It is not yet an approved implementation plan.
-- [Development guide](docs/development.md) covers building, testing, and runtime checks.
-- [Worktree workflow](docs/worktrees.md) explains how agents do task work.
+It bundles [PDF.js](https://github.com/mozilla/pdf.js) (Apache 2.0), PDF.js's OpenJPEG, JBIG2, and qcms image and color decoders (BSD, Apache 2.0, and MIT), and [Svelte](https://github.com/sveltejs/svelte) (MIT). The [license texts and notices](licenses/README.md) are also embedded in the generated `main.js`, so they travel with the installed plugin.
