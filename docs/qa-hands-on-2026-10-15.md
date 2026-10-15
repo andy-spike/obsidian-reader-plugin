@@ -6,6 +6,8 @@ This pass used real pointer drags, clicks, and keyboard input, with screenshots 
 
 ## Confirmed finding: page navigation reports the wrong page in a narrow pane
 
+Status: fixed in the follow-up implementation. The original reproduction and measurements are retained below.
+
 The two-page sample PDF reaches the end of the document after requesting page 2, but the toolbar returns to `1 / 2`. Next remains enabled and cannot move the view farther. This is a navigation and page-indicator defect. The observed highlights and book-note writing remained intact.
 
 Reproduction:
@@ -33,9 +35,31 @@ Read-only measurements after the request:
 
 The behavior also appeared while narrowing the pane after navigating to page 2. Entering page 2 again reproduced it. Widening the pane allowed normal page-2 navigation.
 
-The current-page calculation in `src/reader-view.ts`, in `update()`, samples a point 30% down the viewport. In this geometry that point remains on page 1, even at maximum scroll. The page requested by `goToPage()` is consequently replaced by page 1 during the next update. A fix needs to account for short rendered pages and the end of the scroll range. Regression coverage should explicitly resize the Reader to this width; the existing two-tab E2E check did not exercise this geometry.
+The original current-page calculation in `src/reader-view.ts`, in `update()`, sampled a point 30% down the viewport. In this geometry that point remained on page 1, even at maximum scroll. The page requested by `goToPage()` was consequently replaced by page 1 during the next update. The existing two-tab E2E check did not exercise this geometry.
 
 Local screenshot evidence is retained under `.dev-vault/qa/hands-on-2026-10-15/narrow-page-number.png`. These local artifacts are ignored by Git.
+
+## Fix and regression verification
+
+Reader now retains an explicitly requested page until scrolling moves away from the position reached by that request. This matters when the browser clamps several requested pages to the same scroll position, including when an entire short PDF fits onscreen. Resizing, zooming, and unloading invalidate the request. Ordinary scrolling recognizes the beginning and end of the document before using the usual viewport sample. Restoring saved reading state recalculates the displayed page from the saved viewport position.
+
+The new E2E case failed with `Expected page 2 after layout settled` before the fix. It now passes at a measured Reader width of 446 pixels. It covers narrowing a pane already on page 2, entering a page number, Previous/Next and their disabled states, ordinary scrolling to either end, reopening, and navigation at 25% zoom with both pages entirely onscreen.
+
+The complete `pnpm test:e2e` run passes all 17 workflow groups. `pnpm build` reports no errors or warnings, and `pnpm test` passes all 56 tests.
+
+A follow-up hands-on pass opened the sample PDF through the quick switcher, narrowed the window to obtain the same Reader geometry, entered page 2, and clicked Previous and Next. The fixed result was:
+
+```json
+{
+  "paneWidth": 446,
+  "page": "2",
+  "nextDisabled": true,
+  "scrollTop": 242,
+  "maxScroll": 242
+}
+```
+
+Previous returned to page 1, and Next returned to page 2 with Next disabled again. The fixed screenshot is retained locally at `.dev-vault/qa/hands-on-2026-10-15/narrow-page-number-fixed.png`.
 
 ## Workflows that passed
 
@@ -57,7 +81,7 @@ Additional local screenshots show the highlight and writing, the reordered palet
 
 ## Verification limits
 
-The confirmed navigation defect remains unresolved in this verification change. This pass did not change plugin behavior.
+The original exploratory pass recorded the defect without changing plugin behavior. The follow-up fix and its verification are described above.
 
 The headless Settings window initially had a 1 by 1 viewport and needed resizing before visual interaction. Keyboard shortcuts became unresponsive after one Settings-window close, including Obsidian's own Ctrl+O. After restarting and clicking the Reader pane, H, Ctrl+O, and T worked. That observation is not isolated to the plugin and is not classified as a confirmed plugin defect.
 

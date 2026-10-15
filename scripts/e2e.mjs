@@ -112,6 +112,52 @@ try {
     waitFor(`${reader()}.contentEl.querySelector(".reader-page-input").value === "1"`, "Could not return to page one");
   });
 
+  step("page navigation survives a narrow pane and a document that fits entirely onscreen", () => {
+    const size = evaluate(`return {width:innerWidth, height:innerHeight};`);
+    const assertPage = page => {
+      evaluate(`await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return true;`);
+      check(`${reader()}.contentEl.querySelector('.reader-page-input').value === '${page}'`, `Expected page ${page} after layout settled`);
+      check(`${reader()}.contentEl.querySelector('[aria-label="Next page"]').disabled === ${page === 2}`, 'Next page has the wrong disabled state');
+    };
+    try {
+      click('.reader-page-input'); run('type', '2'); press('Enter');
+      assertPage(2);
+      evaluate(`const width = innerWidth + 446 - ${reader()}.contentEl.querySelector('.reader-stage').clientWidth; require('@electron/remote').getCurrentWindow().setSize(width, innerHeight); return true;`);
+      waitFor(`Math.abs(${reader()}.contentEl.querySelector('.reader-stage').clientWidth - 446) <= 2`, 'Could not reproduce the narrow Reader pane');
+      assertPage(2);
+      click('.reader-page-input'); run('type', '2'); press('Enter');
+      assertPage(2);
+      click('[aria-label="Previous page"]');
+      assertPage(1);
+      click('[aria-label="Next page"]');
+      assertPage(2);
+      click('[aria-label="Previous page"]');
+      evaluate(`const stage = ${reader()}.contentEl.querySelector('.reader-stage'); stage.scrollTop = stage.scrollHeight; return true;`);
+      assertPage(2);
+      evaluate(`${reader()}.contentEl.querySelector('.reader-stage').scrollTop = 0; return true;`);
+      assertPage(1);
+      click('[aria-label="Next page"]');
+      assertPage(2);
+      evaluate(`${reader()}.leaf.detach(); await app.workspace.getLeaf('tab').openFile(app.vault.getAbstractFileByPath(${JSON.stringify(source)})); return true;`);
+      waitFor(`app.workspace.getLeavesOfType('reader-plugin-pdf').some(l => l.view.file?.path === ${JSON.stringify(source)} && l.view.getRecord?.())`, 'Could not reopen the narrow Reader');
+      activate();
+      assertPage(2);
+      // At 25% both pages fit in the viewport, so page changes cannot move the scrollbar.
+      for (let i = 0; i < 10 && evaluate(`return ${reader()}.getState().zoom !== 0.25;`); i++) click('[aria-label="Zoom out (-)"]');
+      waitFor(`(() => {const stage = ${reader()}.contentEl.querySelector('.reader-stage'); return stage.scrollHeight <= stage.clientHeight;})()`, 'Expected the entire fixture to fit onscreen');
+      click('.reader-page-input'); run('type', '2'); press('Enter');
+      assertPage(2);
+      click('[aria-label="Previous page"]');
+      assertPage(1);
+      click('[aria-label="Next page"]');
+      assertPage(2);
+    } finally {
+      evaluate(`require('@electron/remote').getCurrentWindow().setSize(${size.width}, ${size.height}); return true;`);
+      click('[aria-label="Reset zoom to fit width (0)"]');
+      click('.reader-page-input'); run('type', '1'); press('Enter');
+    }
+  });
+
   step("table of contents searches and navigates with the keyboard", () => {
     activate(); press('t');
     waitFor(`document.querySelectorAll('.reader-outline-row').length === 2`, "Table of contents did not load");

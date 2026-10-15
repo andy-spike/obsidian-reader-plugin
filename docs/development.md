@@ -75,6 +75,8 @@ Run `pnpm test:e2e` to build the plugin and exercise the reading workflow in rea
 
 The suite covers default PDF routing and native-viewer fallback, page and zoom controls, table-of-contents search, selection popups, recoloring, book-note writing and following in both placements, delete and Undo, passage links, highlight mode, shared edits across tabs, rename, reading-position restoration, plugin reload, and a fresh Obsidian process. It injects an annotation write failure into the development vault's adapter to verify the retry notice, preservation of the previous JSON, and automatic recovery. It restores the adapter and plugin settings afterward.
 
+Page-navigation coverage includes a 446-pixel Reader pane and 25% zoom with the entire sample PDF onscreen. It checks page requests after layout settles, Previous/Next and their disabled states, scrolling to either end, and reopening at the saved position.
+
 Each run creates its own `Reader E2E <timestamp>/` folder using original sample PDFs with a small outline. Successful runs remove their files and tabs. Failed runs retain their fixture and save `.dev-vault/e2e-failure.png` for diagnosis. The next run closes tabs from earlier E2E fixtures so leftover split panes do not affect its layout. Run this command serially because it controls the checkout's shared headless instance and restarts it. Clipboard copy uses the system clipboard. The suite does not cover scanned PDFs, very long books, every settings control, operating-system combinations, or sync between separate Obsidian instances.
 
 Three modules keep reading workflow rules out of plugin startup:
