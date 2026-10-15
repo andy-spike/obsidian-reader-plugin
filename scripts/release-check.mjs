@@ -14,6 +14,11 @@ const wasmLicenses = ["pdfjs-openjpeg", "openjpeg", "pdfjs-jbig2", "jbig2", "pdf
 for (const file of ["LICENSE", "docs/licenses/pdfjs.txt", "docs/licenses/pdfjs-notice.txt", ...wasmLicenses, "docs/licenses/svelte.txt", "docs/licenses/clsx.txt", "docs/licenses/esm-env.txt"]) {
   assert.ok(bundle.includes(await readFile(join(root, file), "utf8")), `Missing bundled license: ${file}`);
 }
+// Reviewers see inline WebAssembly in main.js. Prove it is exactly PDF.js's published decoders.
+for (const file of ["openjpeg.wasm", "jbig2.wasm", "qcms_bg.wasm"]) {
+  const base64 = (await readFile(join(root, "node_modules/pdfjs-dist/wasm", file))).toString("base64");
+  assert.ok(bundle.includes(`"${base64}"`), `main.js does not embed the pdfjs-dist copy of ${file}`);
+}
 
 await mkdir(join(root, ".dev-vault"), { recursive: true });
 const vaultPath = await mkdtemp(join(root, ".dev-vault", "release-check-"));

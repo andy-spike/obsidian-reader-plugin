@@ -14,6 +14,8 @@ export default [{
     "@typescript-eslint/no-unsafe-argument": "error",
     "@typescript-eslint/no-unsafe-call": "error",
     "@typescript-eslint/no-unsafe-return": "error",
+    "@typescript-eslint/unbound-method": "error",
+    "obsidianmd/no-global-this": "error",
     "obsidianmd/no-forbidden-elements": "error",
     "obsidianmd/no-static-styles-assignment": "error",
     "obsidianmd/prefer-window-timers": "error",

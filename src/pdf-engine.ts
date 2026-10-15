@@ -19,46 +19,27 @@ const bundledWasmFiles: Record<string, string> = {
 
 /**
  * Runs inside the PDF.js worker, before PDF.js. It must not use anything outside its own body,
- * because it is converted to source text. PDF.js loads image decoders with fetch, and the
- * color-profile decoder with a synchronous XMLHttpRequest, so both are answered here.
+ * because it is converted to source text. Each bundled file becomes a local blob URL, and
+ * requests for `prefix` + file name are redirected there. PDF.js loads image decoders with
+ * fetch, and the color-profile decoder with a synchronous XMLHttpRequest, so both redirect.
  */
 function serveBundledFiles(prefix: string, base64ByName: Record<string, string>): void {
-  const bytesFor = (url: string): Uint8Array<ArrayBuffer> | null => {
-    if (!url.startsWith(prefix)) return null;
-    const base64 = base64ByName[url.slice(prefix.length)];
-    if (base64 === undefined) return null;
-    return Uint8Array.from(atob(base64), character => character.charCodeAt(0));
-  };
+  const blobUrlByName = new Map<string, string>();
+  for (const [name, base64] of Object.entries(base64ByName)) {
+    const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+    blobUrlByName.set(name, URL.createObjectURL(new Blob([bytes], { type: "application/wasm" })));
+  }
+  const redirect = (url: string): string => (url.startsWith(prefix) && blobUrlByName.get(url.slice(prefix.length))) || url;
 
-  const nativeFetch = globalThis.fetch;
-  globalThis.fetch = (input, init) => {
-    const bytes = typeof input === "string" ? bytesFor(input) : null;
-    if (!bytes) return nativeFetch(input, init);
-    return Promise.resolve(new Response(bytes, { headers: { "Content-Type": "application/wasm" } }));
-  };
+  const nativeFetch = self.fetch.bind(self);
+  self.fetch = (input, init) => nativeFetch(typeof input === "string" ? redirect(input) : input, init);
 
-  const bundledResponses = new WeakMap<XMLHttpRequest, ArrayBuffer>();
-  const requestPrototype = XMLHttpRequest.prototype;
-  const nativeOpen = requestPrototype.open;
-  const nativeSend = requestPrototype.send;
-  const nativeResponse = Object.getOwnPropertyDescriptor(requestPrototype, "response")?.get;
-  requestPrototype.open = function (this: XMLHttpRequest, ...args: [string, string | URL, ...unknown[]]) {
-    const bytes = bytesFor(String(args[1]));
-    if (bytes) bundledResponses.set(this, bytes.buffer);
-    else {
-      bundledResponses.delete(this);
-      Reflect.apply(nativeOpen, this, args);
+  class RedirectingRequest extends XMLHttpRequest {
+    override open(method: string, url: string | URL, async = true, username?: string | null, password?: string | null): void {
+      super.open(method, redirect(String(url)), async, username, password);
     }
-  };
-  requestPrototype.send = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
-    if (!bundledResponses.has(this)) nativeSend.call(this, body);
-  };
-  Object.defineProperty(requestPrototype, "response", {
-    configurable: true,
-    get(this: XMLHttpRequest): unknown {
-      return bundledResponses.get(this) ?? nativeResponse?.call(this);
-    },
-  });
+  }
+  self.XMLHttpRequest = RedirectingRequest;
 }
 
 // Ship the matching worker in the plugin bundle. No CDN or private Obsidian PDF APIs.
