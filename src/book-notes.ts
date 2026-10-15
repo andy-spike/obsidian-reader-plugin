@@ -1,6 +1,6 @@
 import { App, MarkdownView, normalizePath, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type { AnnotationRecord, AnnotationStore } from "./annotations";
-import { BookNoteReconciler, defaultNoteHeader, fillTemplate, findSections, noteFileName } from "./book-note";
+import { BookNoteReconciler, ReconcileOptions, defaultNoteHeader, fillTemplate, findSections, noteFileName } from "./book-note";
 import type { ReaderSettings } from "./settings";
 
 function localDate(): string {
@@ -109,6 +109,10 @@ export class BookNotes {
     this.listeners.clear();
   }
 
+  private reconcileOptions(): ReconcileOptions {
+    return { keepWritingOfDeleted: this.settings().keepWritingOfDeletedHighlights };
+  }
+
   /** Create or reconcile a note, one update at a time per PDF. */
   sync(record: AnnotationRecord): Promise<TFile | null> {
     const previous = this.queues.get(record.documentId) ?? Promise.resolve();
@@ -119,7 +123,7 @@ export class BookNotes {
 
   private async update(record: AnnotationRecord): Promise<TFile | null> {
     let file = this.file(record);
-    if (file) await this.app.vault.process(file, text => this.reconciler.reconcile(text, record));
+    if (file) await this.app.vault.process(file, text => this.reconciler.reconcile(text, record, this.reconcileOptions()));
     else if (record.annotations.length) file = await this.create(record);
     let changed = false;
     if (file) {
@@ -173,7 +177,7 @@ export class BookNotes {
     let header = defaultNoteHeader(source);
     const template = this.settings().noteTemplate ? this.app.vault.getAbstractFileByPath(this.settings().noteTemplate) : null;
     if (template instanceof TFile) header = fillTemplate(await this.app.vault.read(template), { title, source, date: localDate() });
-    const file = await this.app.vault.create(path, this.reconciler.reconcile(header.endsWith("\n") ? header : header + "\n", record));
+    const file = await this.app.vault.create(path, this.reconciler.reconcile(header.endsWith("\n") ? header : header + "\n", record, this.reconcileOptions()));
     if (template instanceof TFile) {
       await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => { frontmatter.source ??= source; });
     }
@@ -185,7 +189,7 @@ export class BookNotes {
   }
 
   private async adopt(file: TFile, record: AnnotationRecord): Promise<TFile> {
-    await this.app.vault.process(file, text => this.reconciler.reconcile(text, record));
+    await this.app.vault.process(file, text => this.reconciler.reconcile(text, record, this.reconcileOptions()));
     return file;
   }
 

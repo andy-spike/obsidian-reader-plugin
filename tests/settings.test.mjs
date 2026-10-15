@@ -76,6 +76,9 @@ test("book note settings have defaults and clean paths", () => {
   assert.equal(defaults.highlightMode, false);
   assert.equal(defaults.showAnnotationsOnOpen, true);
   assert.equal(defaults.notePlace, "sidebar");
+  assert.equal(defaults.keepWritingOfDeletedHighlights, false);
+  assert.equal(loadSettings({ keepWritingOfDeletedHighlights: true }).keepWritingOfDeletedHighlights, true);
+  assert.equal(loadSettings({ keepWritingOfDeletedHighlights: "yes" }).keepWritingOfDeletedHighlights, false);
   assert.equal(loadSettings({ notePlace: "beside" }).notePlace, "beside");
   assert.equal(loadSettings({ notePlace: "window" }).notePlace, "sidebar");
   assert.equal(loadSettings({ showAnnotationsOnOpen: false }).showAnnotationsOnOpen, false);

@@ -1,7 +1,8 @@
 import type { Annotation, AnnotationRecord } from "./annotations";
 
 /**
- * Each highlight has a quote section in its PDF's book note. Reconciliation preserves the reader's writing.
+ * Each highlight has a quote section in its PDF's book note. Reconciliation preserves the reader's writing,
+ * except under a deleted highlight, where it goes with the quote unless the reader chose to keep it.
  *
  * The passage link identifies the highlight; the block ID lets other notes link to the section.
  *
@@ -177,7 +178,7 @@ function insertSection(text: string, input: SectionInput, before: Section | null
   return addSeparators(finish(lines));
 }
 
-/** Removes a section's quote and block ID. Only call this for sections with nothing written under them and an unedited quote. */
+/** Removes a section's quote, block ID, and writing. Only call this for sections with an unedited quote. */
 function removeSection(text: string, section: Section): string {
   const lines = text.split("\n");
   const sections = findSections(text);
@@ -249,11 +250,18 @@ const byPosition = (a: Annotation, b: Annotation) => a.page - b.page || a.positi
 const comments = (record: AnnotationRecord): MovedComment[] => [...record.annotations].sort(byPosition)
   .filter(annotation => annotation.comment.trim()).map(annotation => ({ id: annotation.id, comment: annotation.comment }));
 
+export interface ReconcileOptions {
+  /** Keep the section of a deleted highlight when the reader wrote under it, instead of removing the writing with the quote. */
+  keepWritingOfDeleted: boolean;
+}
+
 /** Owns the complete text policy. Only quotes confirmed after a successful vault write may later be removed. */
 export class BookNoteReconciler {
   private quotes = new Map<string, Map<string, string>>();
+  /** Writing removed with deleted highlights, by document ID and then annotation ID, so undoing a delete brings it back. */
+  private removedWritings = new Map<string, Map<string, string>>();
 
-  reconcile(text: string, record: AnnotationRecord): string {
+  reconcile(text: string, record: AnnotationRecord, options: ReconcileOptions = { keepWritingOfDeleted: false }): string {
     text = dropPdfLinks(text);
     const quotes = new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]));
     text = flowQuotes(text, quotes);
@@ -261,8 +269,14 @@ export class BookNoteReconciler {
     const ids = new Set(record.annotations.map(annotation => annotation.id));
     const known = this.quotes.get(record.documentId);
     for (const section of findSections(text).reverse()) {
-      if (ids.has(section.id) || section.writing) continue;
-      if (known?.get(section.id) === quoteText(section.quote)) text = removeSection(text, section);
+      if (ids.has(section.id) || (section.writing && options.keepWritingOfDeleted)) continue;
+      if (known?.get(section.id) !== quoteText(section.quote)) continue;
+      if (section.writing) {
+        const removed = this.removedWritings.get(record.documentId) ?? new Map<string, string>();
+        removed.set(section.id, section.writing);
+        this.removedWritings.set(record.documentId, removed);
+      }
+      text = removeSection(text, section);
     }
     const sorted = [...record.annotations].sort(byPosition);
     for (const annotation of sorted) {
@@ -273,6 +287,9 @@ export class BookNoteReconciler {
         return other && byPosition(annotation, other) < 0;
       }) ?? null;
       text = insertSection(text, { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact }, later);
+      const removedWriting = this.removedWritings.get(record.documentId)?.get(annotation.id);
+      const inserted = findSections(text).find(section => section.id === annotation.id);
+      if (removedWriting && inserted) text = appendWriting(text, inserted, removedWriting);
     }
     return placeComments(text, comments(record));
   }

@@ -18,6 +18,8 @@ export interface ReaderSettings {
   /** Show the PDF's book note in the sidebar whenever a PDF opens in Reader. */
   showAnnotationsOnOpen: boolean;
   notePlace: NotePlace;
+  /** When a highlight is deleted, keep its quote in the book note if something is written under it. Off removes both. */
+  keepWritingOfDeletedHighlights: boolean;
 }
 export const NOTES_FOLDER = "Book notes";
 
@@ -54,7 +56,7 @@ function isHighlightColor(value: unknown): value is HighlightColor {
 }
 
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown };
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown; keepWritingOfDeletedHighlights?: unknown };
   const valid = Array.isArray(data.colors)
     ? data.colors.filter(isHighlightColor)
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
@@ -72,6 +74,7 @@ export function loadSettings(saved: unknown): ReaderSettings {
     highlightMode: data.highlightMode === true,
     showAnnotationsOnOpen: data.showAnnotationsOnOpen !== false,
     notePlace: data.notePlace === "beside" ? "beside" : "sidebar",
+    keepWritingOfDeletedHighlights: data.keepWritingOfDeletedHighlights === true,
     highlightModeColor: typeof data.highlightModeColor === "string" && /^[\w-]+$/.test(data.highlightModeColor) ? data.highlightModeColor : DEFAULT_COLORS[0]!.id,
   };
 }
@@ -166,6 +169,14 @@ export class ReaderSettingTab extends PluginSettingTab {
             new NoteSuggest(this.app, text.inputEl, path => { apply(path); void this.host.saveSettings(); });
             this.saveOnLeave(text.inputEl, apply);
           }); },
+        },
+        {
+          name: "Keep writing of deleted highlights",
+          desc: "When you delete a highlight, its quote is removed from the book note along with anything you wrote under it. Turn on to keep the quote and your writing when you wrote something.",
+          render: row => { row.addToggle(toggle => toggle.setValue(settings.keepWritingOfDeletedHighlights).onChange(async value => {
+            settings.keepWritingOfDeletedHighlights = value;
+            await this.host.saveSettings();
+          })); },
         },
       ] },
       { type: "group", heading: "Storage", items: [{

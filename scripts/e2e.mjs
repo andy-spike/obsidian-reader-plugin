@@ -246,12 +246,13 @@ try {
     saved();
   });
 
-  step("delete preserves writing and Undo restores the highlight", () => {
+  step("delete removes the quote and writing, and Undo restores both", () => {
     activate(); click('.reader-mark'); press("Delete");
     waitFor(`${record()}.annotations.length === 0`, "Delete did not remove highlight");
-    check(`(await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing')`, "Deleting a highlight lost writing");
+    waitFor(`(async () => !(await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing'))()`, "Deleting a highlight kept its writing");
     evaluate(`const undo = [...document.querySelectorAll('.notice a')].find(el => el.textContent === 'Undo'); if (!undo) throw new Error('Missing Undo'); undo.click(); return true;`);
     waitFor(`${record()}.annotations.length === 1`, "Undo did not restore highlight");
+    waitFor(`(async () => (await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing'))()`, "Undo did not restore writing");
     saved();
   });
 

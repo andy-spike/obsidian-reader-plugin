@@ -34,11 +34,33 @@ test("reconciliation creates flowing quotes, links, short block IDs, and reading
   assert.equal(reconciler.reconcile(text, r), text);
 });
 
-test("only known untouched deleted sections are removed, preserving surrounding writing", () => {
+test("deleted sections are removed with the writing under them by default", () => {
+  const { reconciler, r, text } = saved([highlight("a1", 1), highlight("a2", 2), highlight("a3", 3)]);
+  const edited = text.replace("^a2\n", "^a2\n\nGone with its quote.\n\n## My heading\n\nOutside the passage.\n");
+  r.annotations = r.annotations.filter(a => a.id !== "a2");
+  const result = reconciler.reconcile(edited, r);
+  assert.deepEqual(findSections(result).map(s => s.id), ["a1", "a3"]);
+  assert.ok(!result.includes("Gone with its quote."));
+  assert.match(result, /## My heading\n\nOutside the passage\./);
+  assert.ok(!/\n\n\n/.test(result));
+});
+
+test("undoing a delete brings back the writing removed with the quote", () => {
+  const { reconciler, r, text } = saved([highlight("a1", 1), highlight("a2", 2)]);
+  const edited = text.replace("^a2\n", "^a2\n\nMy thought.\n");
+  const deleted = r.annotations.find(a => a.id === "a2");
+  r.annotations = r.annotations.filter(a => a !== deleted);
+  const removed = reconciler.reconcile(edited, r);
+  reconciler.confirm(r, removed);
+  r.annotations.push(deleted);
+  assert.equal(findSections(reconciler.reconcile(removed, r)).find(s => s.id === "a2").writing, "My thought.");
+});
+
+test("with keepWritingOfDeleted, only unwritten deleted sections are removed, preserving surrounding writing", () => {
   const { reconciler, r, text } = saved([highlight("a1", 1), highlight("a2", 2), highlight("a3", 3)]);
   const edited = text.replace("^a1\n", "^a1\n\nKeep this.\n").replace("^a3\n", "^a3\n\nAnd this.\n");
   r.annotations = [];
-  const result = reconciler.reconcile(edited, r);
+  const result = reconciler.reconcile(edited, r, { keepWritingOfDeleted: true });
   assert.deepEqual(sections(result), [{ id: "a1", quote: "Quote a1", writing: "Keep this." }, { id: "a3", quote: "Quote a3", writing: "And this." }]);
   assert.equal((result.match(/^---$/gm) ?? []).length, 3);
   assert.ok(!/\n\n\n/.test(result));

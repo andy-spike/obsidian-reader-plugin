@@ -18,10 +18,11 @@ Write under a quote as much as you like. A `---` line separates each section fro
 
 ## The note belongs to you
 
-Reading Desk only adds and removes sections. It never edits your writing.
+Reading Desk only adds and removes sections. It never edits your writing, though deleting a highlight removes the writing in its section.
 
 - A new highlight gets a new section. It goes before the first section from later in the book, or at the end.
-- Deleting a highlight removes its section only if you wrote nothing under it and left its quote unedited. Otherwise the section stays.
+- Deleting a highlight removes its section: the quote and what you wrote under it, up to the next section or heading. **Undo** brings both back. To keep sections you wrote in, turn on **Keep writing of deleted highlights** in settings.
+- A section whose quote you edited stays when its highlight is deleted.
 - Your headings, other text, and sections you've moved are left alone.
 - If you delete the whole note, the next highlight creates a new one.
 
