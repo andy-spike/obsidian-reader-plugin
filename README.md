@@ -14,9 +14,9 @@ Reading Desk is an Obsidian desktop plugin. It replaces the built-in PDF viewer 
 
 ## Install
 
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/andy-spike/obsidian-reader-plugin/releases/latest).
-2. Put them in `.obsidian/plugins/reading-desk/` inside your vault.
-3. In Obsidian, open **Settings → Community plugins** and enable **Reading Desk**.
+**Recommended.** In Obsidian, open **Settings → Community plugins**, turn on community plugins, select **Browse**, search for **Reading Desk**, then **Install** and **Enable**.
+
+**Manual.** Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/andy-spike/obsidian-reader-plugin/releases/latest) into a `reading-desk` folder inside your vault's `.obsidian/plugins/` folder, then enable the plugin under **Settings → Community plugins**. The [getting started guide](docs/getting-started.md#install) has the full steps for both.
 
 It needs Obsidian desktop 1.14.4 or newer. It does not run on mobile.
 

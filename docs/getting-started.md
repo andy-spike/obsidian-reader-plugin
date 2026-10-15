@@ -6,9 +6,26 @@ It works on Obsidian desktop 1.14.4 or newer. It does not run on mobile.
 
 ## Install
 
+### Option 1. Obsidian plugin directory (recommended)
+
+1. Open **Settings → Community plugins**.
+2. Select **Turn on community plugins** if it isn't already on. Obsidian calls the off state Restricted Mode.
+3. Select **Browse** and search for **Reading Desk**.
+4. Select **Install**, then **Enable**.
+
+Obsidian updates directory plugins for you when a new version is released.
+
+### Option 2. Manual install
+
+Use this if you can't reach the plugin directory or want a specific release.
+
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/andy-spike/obsidian-reader-plugin/releases/latest).
-2. Create the folder `.obsidian/plugins/reading-desk/` inside your vault and put the three files in it.
-3. In Obsidian, open **Settings → Community plugins**, turn on community plugins if you haven't, and enable **Reading Desk**.
+2. In your vault, open the `.obsidian/plugins/` folder. The `.obsidian` folder is hidden. To open the plugins folder without hunting for it, go to **Settings → Community plugins** and click the folder icon next to **Installed plugins**.
+3. Create a folder named `reading-desk` inside `plugins` and put the three files in it.
+4. Restart Obsidian, or reload the plugin list.
+5. Open **Settings → Community plugins**, turn on community plugins if needed, and switch on **Reading Desk** under **Installed plugins**.
+
+Obsidian doesn't update manually installed plugins. To update, download the new release and replace the three files.
 
 ## Open a PDF
 
