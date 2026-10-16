@@ -11,12 +11,12 @@ Book notes/
 
 ## Write about a passage in the sidebar
 
-The book note tab in the right sidebar shows one card per highlight, in reading order. A card has the page, the quote in its highlight's color, and a **Comment** section below it.
+The book note tab in the right sidebar lists your highlights in reading order. Each shows its page, the quote marked in its highlight's color, and your comment below it.
 
-- Click **Comment** to open the section, and type. What you type saves to the passage's quote note as you go. Press Escape or click elsewhere when you're done.
+- Click **Add comment** and type. What you type saves to the passage's quote note as you go. Press Enter to finish, or Shift+Enter for a new line. Escape or clicking elsewhere also finishes.
 - A saved comment shows as formatted Markdown. Click it to edit it again. Links in it work like links in any note.
-- Cards with a comment open with the comment showing.
-- **Show in the PDF** (the target icon) scrolls the Reader to the highlight, which pulses once.
+- **Comment** above a saved comment folds it away or shows it again.
+- Click a quote to scroll the Reader to its highlight, which pulses once.
 - **Open the quote note** (the arrow icon) opens the quote note in a tab.
 - The note button at the top opens the whole book note beside the PDF.
 

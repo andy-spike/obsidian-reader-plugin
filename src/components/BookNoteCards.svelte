@@ -57,11 +57,19 @@
     saveTimer = window.setTimeout(save, SAVE_DELAY);
   }
 
+  /** Enter saves the comment and Shift+Enter starts a new line. Enter while an input method is composing text goes to it. */
   function onkeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
+    const submit = event.key === "Enter" && !event.shiftKey && !event.isComposing;
+    if (submit || event.key === "Escape") {
       event.preventDefault();
       (event.currentTarget as HTMLTextAreaElement).blur();
     }
+  }
+
+  /** Clicking the quote shows it in the PDF, unless the click ended a text selection in it. */
+  function onQuoteClick(card: CardData): void {
+    if (!window.getSelection()?.isCollapsed) return;
+    actions.openPassage(card.id);
   }
 
   /** Clicking a rendered comment edits it, unless the click was on a link inside it. */
@@ -101,11 +109,11 @@
       <div class="reader-card-top">
         <span class="reader-card-page">p. {card.page}</span>
         <span class="reader-card-actions">
-          <IconButton icon="locate" label="Show in the PDF" onclick={() => actions.openPassage(card.id)} />
           <IconButton icon="arrow-up-right" label="Open the quote note" onclick={() => actions.openQuoteNote(card.id)} />
         </span>
       </div>
-      <p class="reader-card-quote"><mark>{card.quote}</mark></p>
+      <div class="reader-card-quote" role="link" tabindex="0" onclick={() => onQuoteClick(card)}
+        onkeydown={event => { if (event.key === "Enter") actions.openPassage(card.id); }}><mark>{card.quote}</mark></div>
       {#if card.comment}
         <button type="button" class="reader-card-toggle" aria-expanded={isOpen(card)} onclick={() => toggle(card)}>
           <span class="reader-card-chevron" {@attach icon("chevron-right")}></span>Comment

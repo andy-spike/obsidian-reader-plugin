@@ -79,7 +79,11 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 .reader-card:hover .reader-card-actions, .reader-card-actions:focus-within { opacity: 1; }
 @media (hover: none) { .reader-card-actions { opacity: 1; } }
 .reader-card-quote { margin: 0; font-family: var(--font-text); font-size: var(--font-ui-medium); line-height: 1.6; color: var(--text-normal); user-select: text; }
-/* The same marker as on the page, so a passage reads as the highlight it came from. */
+.reader-card-quote { cursor: pointer; }
+.reader-card-quote:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; border-radius: 2px; }
+/* The same marker as on the page, so a passage reads as the highlight it came from. It deepens to show the quote leads there. */
+.reader-card-quote mark { transition: background-color 120ms ease-out; }
+.reader-card-quote:hover mark { background: color-mix(in srgb, var(--reader-color) 45%, transparent); }
 .reader-card-quote mark { padding: 0.1em 0.15em; border-radius: 2px; background: color-mix(in srgb, var(--reader-color) 28%, transparent); color: inherit; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .reader-annotations button.reader-card-toggle,
 .reader-annotations button.reader-card-add { display: flex; align-items: center; gap: var(--size-2-1); height: auto; margin-top: var(--size-4-2); padding: 0; background: transparent; box-shadow: none; color: var(--text-faint); font-size: var(--font-ui-smaller); }

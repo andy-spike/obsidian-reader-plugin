@@ -235,9 +235,12 @@ try {
     click('.reader-mark');
     evaluate(`const buttons = [...${reader()}.contentEl.querySelectorAll('.reader-popup button')]; buttons.find(b => b.textContent.includes('Write about it')).click(); return true;`);
     waitFor(`document.activeElement?.matches('.reader-card-comment-field') && ${cards}?.contains(document.activeElement)`, "Note did not focus the card's comment field");
-    run("type", "E2E personal writing must survive deletion.");
-    waitFor(`(async () => (await ${quoteNote()})?.includes('E2E personal writing'))()`, "Comment was not saved to the quote note");
-    evaluate(`document.activeElement.blur(); return true;`);
+    run("type", "E2E personal writing");
+    press("Shift+Enter");
+    run("type", "must survive deletion.");
+    press("Enter");
+    waitFor(`!document.activeElement?.matches('.reader-card-comment-field')`, "Enter did not submit the comment");
+    waitFor(`(async () => (await ${quoteNote()})?.includes('E2E personal writing\\nmust survive deletion.'))()`, "Comment was not saved to the quote note with its new line");
     waitFor(`${cards}.querySelector('.reader-card-comment')?.textContent.includes('E2E personal writing')`, "The card did not show the saved comment");
     waitFor(`!!${reader()}.contentEl.querySelector('.reader-mark-note')`, "Writing indicator did not update");
     saved();
@@ -310,11 +313,12 @@ try {
     activate();
   });
 
-  step("the card's Show in the PDF button reveals and pulses the highlight", () => {
+  step("clicking a card's quote reveals and pulses the highlight", () => {
     activate();
     waitFor(`!${reader()}.contentEl.querySelector('.reader-mark.is-flashing')`, "The earlier pulse did not end");
-    evaluate(`${cards}.querySelector('.reader-card button[aria-label="Show in the PDF"]').click(); return true;`);
-    waitFor(`!!${reader()}.contentEl.querySelector('.reader-mark.is-flashing')`, "Show in the PDF did not pulse the highlight");
+    evaluate(`const quote = ${cards}.querySelector('.reader-card .reader-card-quote'); quote.dataset.readerE2eQuote = 'first'; return true;`);
+    run('click', '[data-reader-e2e-quote="first"]');
+    waitFor(`!!${reader()}.contentEl.querySelector('.reader-mark.is-flashing')`, "Clicking the quote did not pulse the highlight");
   });
 
   step("highlight mode creates a passage directly and Escape clears an ordinary selection", () => {
