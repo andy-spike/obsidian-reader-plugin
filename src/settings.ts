@@ -25,6 +25,8 @@ export interface ReaderSettings {
   pageColors: PageColors;
   /** Choices made for single PDFs, by vault path. A PDF without an entry uses `pageColors`. */
   pdfPageColors: Record<string, PageColors>;
+  /** Write each quote in a book note as a wikilink, like [[The quoted passage]]. */
+  linkQuotes: boolean;
 }
 export const NOTES_FOLDER = "Book notes";
 
@@ -61,7 +63,7 @@ function isHighlightColor(value: unknown): value is HighlightColor {
 }
 
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown; keepWritingOfDeletedHighlights?: unknown; pageColors?: unknown; pdfPageColors?: unknown };
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown; keepWritingOfDeletedHighlights?: unknown; pageColors?: unknown; pdfPageColors?: unknown; linkQuotes?: unknown };
   const valid = Array.isArray(data.colors)
     ? data.colors.filter(isHighlightColor)
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
@@ -82,6 +84,7 @@ export function loadSettings(saved: unknown): ReaderSettings {
     keepWritingOfDeletedHighlights: data.keepWritingOfDeletedHighlights === true,
     pageColors: isPageColors(data.pageColors) ? data.pageColors : DEFAULT_PAGE_COLORS,
     pdfPageColors: loadPdfPageColors(data.pdfPageColors),
+    linkQuotes: data.linkQuotes !== false,
     highlightModeColor: typeof data.highlightModeColor === "string" && /^[\w-]+$/.test(data.highlightModeColor) ? data.highlightModeColor : DEFAULT_COLORS[0]!.id,
   };
 }
@@ -193,6 +196,14 @@ export class ReaderSettingTab extends PluginSettingTab {
           desc: "When you delete a highlight, its quote is removed from the book note along with anything you wrote under it. Turn on to keep the quote and your writing when you wrote something.",
           render: row => { row.addToggle(toggle => toggle.setValue(settings.keepWritingOfDeletedHighlights).onChange(async value => {
             settings.keepWritingOfDeletedHighlights = value;
+            await this.host.saveSettings();
+          })); },
+        },
+        {
+          name: "Link quotes",
+          desc: "Wrap each quote in double square brackets, so it links to a note named after the passage. Quotes you haven't edited switch form the next time their book note updates.",
+          render: row => { row.addToggle(toggle => toggle.setValue(settings.linkQuotes).onChange(async value => {
+            settings.linkQuotes = value;
             await this.host.saveSettings();
           })); },
         },

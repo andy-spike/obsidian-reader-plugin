@@ -110,7 +110,8 @@ export class BookNotes {
   }
 
   private reconcileOptions(): ReconcileOptions {
-    return { keepWritingOfDeleted: this.settings().keepWritingOfDeletedHighlights };
+    const settings = this.settings();
+    return { keepWritingOfDeleted: settings.keepWritingOfDeletedHighlights, linkQuotes: settings.linkQuotes };
   }
 
   /** Create or reconcile a note, one update at a time per PDF. */

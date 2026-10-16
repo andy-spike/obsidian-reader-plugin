@@ -29,7 +29,7 @@ test("reconciliation creates flowing quotes, links, short block IDs, and reading
   const text = reconciler.reconcile(header, r);
   assert.deepEqual(findSections(text).map(s => s.id), ["first", "e66da097-long-id", "later"]);
   assert.match(text, /document=doc-1&annotation=e66da097-long-id&page=1/);
-  assert.match(text, /> A hyphen-ated quote, self- Aware\n\n\^e66da097\n/);
+  assert.match(text, /> \[\[A hyphen-ated quote, self- Aware\]\]\n\n\^e66da097\n/);
   assert.equal((text.match(/^---$/gm) ?? []).length, 4);
   assert.equal(reconciler.reconcile(text, r), text);
 });
@@ -61,7 +61,7 @@ test("with keepWritingOfDeleted, only unwritten deleted sections are removed, pr
   const edited = text.replace("^a1\n", "^a1\n\nKeep this.\n").replace("^a3\n", "^a3\n\nAnd this.\n");
   r.annotations = [];
   const result = reconciler.reconcile(edited, r, { keepWritingOfDeleted: true });
-  assert.deepEqual(sections(result), [{ id: "a1", quote: "Quote a1", writing: "Keep this." }, { id: "a3", quote: "Quote a3", writing: "And this." }]);
+  assert.deepEqual(sections(result), [{ id: "a1", quote: "[[Quote a1]]", writing: "Keep this." }, { id: "a3", quote: "[[Quote a3]]", writing: "And this." }]);
   assert.equal((result.match(/^---$/gm) ?? []).length, 3);
   assert.ok(!/\n\n\n/.test(result));
 });
@@ -131,11 +131,47 @@ Mine [[Books/Book.pdf#page=1|PDF]].
 `;
   const r = record([highlight("a1", 1, "Old first\nline"), highlight("a2", 2, "Original quote"), highlight("a3", 9, "Third")]);
   const result = reconciler.reconcile(old, r);
-  assert.match(result, /&page=1\)\n> Old first line/);
+  assert.match(result, /&page=1\)\n> \[\[Old first line\]\]/);
   assert.match(result, /> Edited by me\n> on purpose/);
   assert.match(result, /Mine \[\[Books\/Book.pdf#page=1\|PDF\]\]\.\n\n---/);
   assert.match(result, /## Chapter 2\n\n> \[!quote\] p\. 9/);
   assert.equal(reconciler.reconcile(result, r), result);
+});
+
+test("quotes are plain text when linking is turned off", () => {
+  const reconciler = new BookNoteReconciler();
+  const text = reconciler.reconcile(header, record([highlight("a1", 1, "A plain\nquote")]), { keepWritingOfDeleted: false, linkQuotes: false });
+  assert.match(text, /&page=1\)\n> A plain quote\n/);
+});
+
+test("turning linking on or off rewrites unedited quotes and keeps edited ones", () => {
+  const { reconciler, r, text } = saved([highlight("a1", 1), highlight("a2", 2)]);
+  const edited = text.replace("> [[Quote a2]]", "> [[Quote a2]] and my words");
+  const plain = reconciler.reconcile(edited, r, { keepWritingOfDeleted: false, linkQuotes: false });
+  assert.deepEqual(sections(plain).map(s => s.quote), ["Quote a1", "[[Quote a2]] and my words"]);
+  const linked = reconciler.reconcile(plain, r);
+  assert.equal(linked, edited);
+});
+
+test("deleting a highlight removes its section in either quote form", () => {
+  const { reconciler, r, text } = saved([highlight("a1", 1), highlight("a2", 2)]);
+  r.annotations = r.annotations.filter(a => a.id !== "a2");
+  const options = { keepWritingOfDeleted: false, linkQuotes: false };
+  assert.deepEqual(sections(reconciler.reconcile(text, r, options)).map(s => s.id), ["a1"]);
+});
+
+test("quote links keep the visible text when a note name can't hold it", () => {
+  const long = "word ".repeat(40).trim();
+  const text = saved([
+    highlight("a1", 1, "Why: a/b?", 1),
+    highlight("a2", 1, "See [1] or a|b", 2),
+    highlight("a3", 1, long, 3),
+  ]).text;
+  assert.deepEqual(sections(text).map(s => s.quote), [
+    "[[Why- a-b-|Why: a/b?]]",
+    "See [1] or a|b",
+    `[[${long.slice(0, 120).trim()}|${long}]]`,
+  ]);
 });
 
 test("legacy comments migrate once and are confirmed only when the read-back contains them", () => {
