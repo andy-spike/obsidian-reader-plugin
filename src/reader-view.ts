@@ -6,6 +6,7 @@ import type { NotePlace } from "./settings";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
 import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
+import { PAGE_COLOR_CHOICES, type PageColors, showsDarkPages, toggledChoice } from "./page-colors";
 import { checkMenu, colorMenu, deleteAnnotation } from "./ui";
 import { OutlineModal } from "./outline-modal";
 import type { OutlineNode } from "./outline";
@@ -65,6 +66,8 @@ export interface ReaderHost {
   writing(record: AnnotationRecord, annotationId: string): string;
   lastPosition(path: string): ReadingPosition | undefined;
   rememberPosition(path: string, position: ReadingPosition): void;
+  /** Gives one PDF its own page colors, or returns it to the general setting with undefined. */
+  choosePageColors(path: string, choice: PageColors | undefined): void;
 }
 
 const titleOf = (path: unknown): string => typeof path === "string" ? path.split("/").pop()!.replace(/\.pdf$/i, "") : "";
@@ -104,6 +107,7 @@ export class ReaderView extends FileView {
   private controls!: ReturnType<typeof mount<Record<string, unknown>, { update(state: ControlsState): void }>>;
   private outlineAction!: HTMLElement;
   private modeAction!: HTMLElement;
+  private pageColorsAction!: HTMLElement;
   private popup!: AnnotationPopup;
 
   /** The file name to show until the PDF has loaded, so the tab title doesn't change while it opens. */
@@ -166,6 +170,15 @@ export class ReaderView extends FileView {
       colorMenu(this.host.settings().colors, this.modeColor().id, id => this.host.chooseHighlightModeColor(id)).showAtMouseEvent(event);
     });
     this.showHighlightMode();
+    this.pageColorsAction = this.addAction("contrast", "", () => this.togglePageColors());
+    this.pageColorsAction.addClass("reader-page-colors-action");
+    this.pageColorsAction.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      this.pageColorsMenu().showAtMouseEvent(event);
+    });
+    // Obsidian switches between light and dark themes without reopening views, so "follow" listens for it.
+    this.registerEvent(this.app.workspace.on("css-change", () => this.showPageColors()));
+    this.showPageColors();
     this.outlineAction = this.addAction("list", "Table of contents (T)", () => void this.openOutline());
     this.outlineAction.hide();
 
@@ -243,6 +256,8 @@ export class ReaderView extends FileView {
   async onLoadFile(file: TFile): Promise<void> {
     await this.disposePdf();
     const generation = ++this.generation;
+    // Set before any page is drawn, so a PDF with dark pages never shows a white page first.
+    this.showPageColors();
     this.contentEl.addClass("is-opening");
     // Most PDFs open quickly; the message only appears for slow ones, so it doesn't flash.
     window.clearTimeout(this.messageTimer);
@@ -957,6 +972,48 @@ export class ReaderView extends FileView {
     for (const slot of this.active) this.drawMarks(slot);
     this.popup.sync(this.host.settings().colors);
     this.showHighlightMode();
+    this.showPageColors();
+  }
+
+  // ---- Page colors ----
+
+  /** This PDF's own page colors, or undefined when it uses the general setting. */
+  private ownPageColors(): PageColors | undefined {
+    return this.file ? this.host.settings().pdfPageColors[this.file.path] : undefined;
+  }
+
+  private darkTheme(): boolean {
+    return this.contentEl.ownerDocument.body.hasClass("theme-dark");
+  }
+
+  /** Switches this PDF between dark and original pages. If the PDF already has its own choice, it returns to the general setting. */
+  togglePageColors(): void {
+    if (!this.file) return;
+    this.host.choosePageColors(this.file.path, toggledChoice(this.host.settings().pageColors, this.ownPageColors(), this.darkTheme()));
+  }
+
+  private pageColorsMenu(): Menu {
+    const general = this.host.settings().pageColors;
+    const own = this.ownPageColors();
+    const generalName = PAGE_COLOR_CHOICES.find(choice => choice.value === general)!.name;
+    const menu = checkMenu();
+    const choose = (choice: PageColors | undefined) => { if (this.file) this.host.choosePageColors(this.file.path, choice); };
+    menu.addItem(item => item.setTitle(`Use the general setting: ${generalName}`).setChecked(!own).onClick(() => choose(undefined)));
+    menu.addSeparator();
+    for (const choice of PAGE_COLOR_CHOICES) menu.addItem(item => item.setTitle(choice.name).setChecked(own === choice.value).onClick(() => choose(choice.value)));
+    return menu;
+  }
+
+  /** Dark pages are a CSS filter on the drawn pages, so turning them on or off never redraws the PDF. */
+  private showPageColors(): void {
+    const own = this.ownPageColors();
+    const dark = showsDarkPages(this.host.settings().pageColors, own, this.darkTheme());
+    this.contentEl.toggleClass("is-dark-pages", dark);
+    this.pageColorsAction.toggleClass("is-active", dark);
+    this.pageColorsAction.setAttribute("aria-pressed", String(dark));
+    const now = dark ? "Dark pages" : "Original colors";
+    const next = own ? "use the general setting" : dark ? "show original colors" : "show dark pages";
+    this.pageColorsAction.setAttribute("aria-label", `${now}${own ? " for this PDF" : ""}. Click to ${next}. Right-click for more choices.`);
   }
 
   /** Highlight mode's color, or the first color if the chosen one was removed. */

@@ -8,6 +8,14 @@ Open **Settings → Reading Desk**.
 
 **Open book notes.** Where the book note opens, either **In the right sidebar** or **Beside the PDF**. This applies to the book note button, the **A** and **N** keys, and **Note**. Right-click the book note button to open the note in the other place once.
 
+**PDF page colors.** How Reader colors PDF pages:
+
+- **Always original colors** shows each PDF as it is, usually dark text on white paper.
+- **Follow Obsidian's color scheme** shows dark pages while Obsidian uses a dark theme, and original colors in a light theme. Open PDFs change as soon as you switch themes. This is the default.
+- **Always dark pages** shows dark pages in every theme.
+
+Each PDF can have its own choice. See [Page colors](reading-pdfs.md#page-colors).
+
 ## Highlight colors
 
 The palette starts with two colors.

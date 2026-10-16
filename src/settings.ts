@@ -1,5 +1,6 @@
 import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Scope, setIcon, Setting, SettingDefinitionItem, TFile, TFolder } from "obsidian";
 import { ANNOTATION_FOLDER } from "./annotations";
+import { DEFAULT_PAGE_COLORS, isPageColors, loadPdfPageColors, PAGE_COLOR_CHOICES, PageColors } from "./page-colors";
 
 export interface HighlightColor { id: string; name: string; value: string }
 /** Where the book note opens: the right sidebar, or beside the PDF as a tab in the main area. */
@@ -20,6 +21,10 @@ export interface ReaderSettings {
   notePlace: NotePlace;
   /** When a highlight is deleted, keep its quote in the book note if something is written under it. Off removes both. */
   keepWritingOfDeletedHighlights: boolean;
+  /** How PDF pages are colored, unless a PDF has its own choice. */
+  pageColors: PageColors;
+  /** Choices made for single PDFs, by vault path. A PDF without an entry uses `pageColors`. */
+  pdfPageColors: Record<string, PageColors>;
 }
 export const NOTES_FOLDER = "Book notes";
 
@@ -56,7 +61,7 @@ function isHighlightColor(value: unknown): value is HighlightColor {
 }
 
 export function loadSettings(saved: unknown): ReaderSettings {
-  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown; keepWritingOfDeletedHighlights?: unknown };
+  const data = (saved ?? {}) as { colors?: unknown; folder?: unknown; labels?: Record<string, unknown>; notesFolder?: unknown; noteTemplate?: unknown; highlightMode?: unknown; highlightModeColor?: unknown; showAnnotationsOnOpen?: unknown; notePlace?: unknown; keepWritingOfDeletedHighlights?: unknown; pageColors?: unknown; pdfPageColors?: unknown };
   const valid = Array.isArray(data.colors)
     ? data.colors.filter(isHighlightColor)
     : data.labels ? LEGACY_COLORS.map(color => ({ ...color, name: typeof data.labels?.[color.id] === "string" ? data.labels[color.id] as string : color.name })) : [];
@@ -75,6 +80,8 @@ export function loadSettings(saved: unknown): ReaderSettings {
     showAnnotationsOnOpen: data.showAnnotationsOnOpen !== false,
     notePlace: data.notePlace === "beside" ? "beside" : "sidebar",
     keepWritingOfDeletedHighlights: data.keepWritingOfDeletedHighlights === true,
+    pageColors: isPageColors(data.pageColors) ? data.pageColors : DEFAULT_PAGE_COLORS,
+    pdfPageColors: loadPdfPageColors(data.pdfPageColors),
     highlightModeColor: typeof data.highlightModeColor === "string" && /^[\w-]+$/.test(data.highlightModeColor) ? data.highlightModeColor : DEFAULT_COLORS[0]!.id,
   };
 }
@@ -131,6 +138,17 @@ export class ReaderSettingTab extends PluginSettingTab {
               settings.notePlace = value === "beside" ? "beside" : "sidebar";
               await this.host.saveSettings();
             })); },
+        },
+        {
+          name: "PDF page colors",
+          desc: "Dark pages show light text on a dark background, so a PDF doesn't glare in a dark theme. Photos and pictures are inverted too. To choose differently for one PDF, use the page colors button in its header.",
+          render: row => { row.addDropdown(dropdown => {
+            for (const choice of PAGE_COLOR_CHOICES) dropdown.addOption(choice.value, choice.name);
+            dropdown.setValue(settings.pageColors).onChange(async value => {
+              settings.pageColors = isPageColors(value) ? value : DEFAULT_PAGE_COLORS;
+              await this.host.saveSettings();
+            });
+          }); },
         },
       ] },
       { type: "group", heading: "Highlight colors", items: [

@@ -24,6 +24,20 @@ Hold Ctrl (Cmd on macOS) and scroll the wheel to zoom around the pointer. Pages 
 
 The reset button, or the **Reset zoom** command, returns to Fit width.
 
+## Page colors
+
+Dark pages show light text on dark paper, so a PDF doesn't glare when Obsidian uses a dark theme. Reader inverts the drawn page and turns its hues back, so a red heading stays reddish. Photos and pictures are inverted too, so they look like negatives. Highlights keep their own colors.
+
+The general choice is in **Settings → Reading Desk → PDF page colors**. See [Settings](settings.md#reader).
+
+To choose differently for one PDF, use the page colors button (the half-filled circle) in the Reader header. It is lit while dark pages show.
+
+- **Click** it to switch this PDF between dark pages and original colors. Click again to return the PDF to the general setting.
+- **Right-click** it to choose **Use the general setting**, **Always original colors**, **Follow Obsidian's color scheme**, or **Always dark pages** for this PDF.
+- The **Toggle dark pages for this PDF** command does the same as a click.
+
+A PDF keeps its choice when you rename or move it in Obsidian, and on every device that syncs the plugin's settings. Changing the general setting doesn't change PDFs that have their own choice.
+
 ## Table of contents
 
 If the PDF has an outline, a list button appears in the Reader header. Click it, press **T**, or run **Show table of contents**.
