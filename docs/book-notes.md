@@ -9,6 +9,7 @@ At the top is a header. It comes from your template note if you set one (see [Se
 Below it comes one section for every highlight, in reading order. A section holds:
 
 - A `[!quote]` callout with the page number and the quoted text on one flowing line. Line breaks from the PDF become spaces, and a word hyphenated across lines is joined back together.
+- The quote is wrapped in double square brackets, like `[[The quoted passage]]`, so it links to a note named after the passage. Turn off **Link quotes** in settings for plain text. If the passage has characters a note name can't hold, the link uses a shortened or cleaned-up name and still shows the full quote. A passage containing `[`, `]`, or `|` stays plain.
 - An **Open passage** link. Click it to scroll the Reader to the highlight, which pulses once.
 - A block ID, so other notes can link to or embed the passage.
 
