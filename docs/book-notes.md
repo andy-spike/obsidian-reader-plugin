@@ -51,7 +51,6 @@ Below it comes one section for every highlight, in reading order. A section hold
 - A `[!quote]` callout with the page number and the quoted text on one flowing line. Line breaks from the PDF become spaces, and a word hyphenated across lines is joined back together.
 - The quote links to its quote note and shows the full quote as the link text, like `[[Book notes/Book/The quoted passage|The quoted passage]]`. A passage containing `[`, `]`, or `|` stays plain, because a link can't show those characters.
 - An **Open passage** link. Click it to scroll the Reader to the highlight, which pulses once.
-- A block ID, so other notes can link to or embed the passage.
 
 The callout takes its highlight's color as a strip and a light tint. Recolor the highlight in the PDF and the quote follows.
 

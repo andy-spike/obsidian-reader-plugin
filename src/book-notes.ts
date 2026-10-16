@@ -243,7 +243,7 @@ export class BookNotes {
       line = section.writingEnd - 1;
       while (line > section.writingStart && !editor.getLine(line).trim()) line--;
     } else {
-      // A blank line after the block ID, one to type on, and one before whatever follows.
+      // A blank line after the quote, one to type on, and one before whatever follows.
       const anchor = (section.idLine >= 0 ? section.idLine : section.calloutEnd - 1) + 1;
       const atEnd = section.writingEnd >= editor.lineCount();
       const needed = atEnd ? 2 : 3;

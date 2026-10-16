@@ -23,20 +23,21 @@ function saved(annotations) {
   return { reconciler, r, text };
 }
 
-test("reconciliation creates flowing quotes, links, short block IDs, and reading order", () => {
+test("reconciliation creates flowing quotes and passage links in reading order, without block IDs", () => {
   const reconciler = new BookNoteReconciler();
   const r = record([highlight("later", 3), highlight("e66da097-long-id", 1, "A hyphen-\nated quote,\n  self-\nAware", 20), highlight("first", 1, "First", 1)]);
   const text = reconciler.reconcile(header, r);
   assert.deepEqual(findSections(text).map(s => s.id), ["first", "e66da097-long-id", "later"]);
   assert.match(text, /document=doc-1&annotation=e66da097-long-id&page=1/);
-  assert.match(text, /> A hyphen-ated quote, self- Aware\n\n\^e66da097\n/);
+  assert.match(text, /> A hyphen-ated quote, self- Aware\n\n---\n/);
+  assert.ok(!/^\^/m.test(text));
   assert.equal((text.match(/^---$/gm) ?? []).length, 4);
   assert.equal(reconciler.reconcile(text, r), text);
 });
 
 test("deleted sections are removed with the writing under them by default", () => {
   const { reconciler, r, text } = saved([highlight("a1", 1), highlight("a2", 2), highlight("a3", 3)]);
-  const edited = text.replace("^a2\n", "^a2\n\nGone with its quote.\n\n## My heading\n\nOutside the passage.\n");
+  const edited = text.replace("> Quote a2\n", "> Quote a2\n\nGone with its quote.\n\n## My heading\n\nOutside the passage.\n");
   r.annotations = r.annotations.filter(a => a.id !== "a2");
   const result = reconciler.reconcile(edited, r);
   assert.deepEqual(findSections(result).map(s => s.id), ["a1", "a3"]);
@@ -47,7 +48,7 @@ test("deleted sections are removed with the writing under them by default", () =
 
 test("undoing a delete brings back the writing removed with the quote", () => {
   const { reconciler, r, text } = saved([highlight("a1", 1), highlight("a2", 2)]);
-  const edited = text.replace("^a2\n", "^a2\n\nMy thought.\n");
+  const edited = text.replace("> Quote a2\n", "> Quote a2\n\nMy thought.\n");
   const deleted = r.annotations.find(a => a.id === "a2");
   r.annotations = r.annotations.filter(a => a !== deleted);
   const removed = reconciler.reconcile(edited, r);
@@ -58,7 +59,7 @@ test("undoing a delete brings back the writing removed with the quote", () => {
 
 test("with keepWritingOfDeleted, only unwritten deleted sections are removed, preserving surrounding writing", () => {
   const { reconciler, r, text } = saved([highlight("a1", 1), highlight("a2", 2), highlight("a3", 3)]);
-  const edited = text.replace("^a1\n", "^a1\n\nKeep this.\n").replace("^a3\n", "^a3\n\nAnd this.\n");
+  const edited = text.replace("> Quote a1\n", "> Quote a1\n\nKeep this.\n").replace("> Quote a3\n", "> Quote a3\n\nAnd this.\n");
   r.annotations = [];
   const result = reconciler.reconcile(edited, r, { keepWritingOfDeleted: true });
   assert.deepEqual(sections(result), [{ id: "a1", quote: "Quote a1", writing: "Keep this." }, { id: "a3", quote: "Quote a3", writing: "And this." }]);
@@ -182,18 +183,28 @@ test("legacy comments migrate once and are confirmed only when the read-back con
   r.annotations[0].comment = "First\r\nsecond line";
   r.annotations[1].comment = "A later thought";
   assert.deepEqual([...reconciler.confirm(r, text)], []);
-  const edited = text.replace("^a2\n", "^a2\n\nAlready written.\n");
+  const edited = text.replace("> Quote a2\n", "> Quote a2\n\nAlready written.\n");
   const result = reconciler.reconcile(edited, r);
   assert.deepEqual(findSections(result).map(s => s.writing), ["First\nsecond line", "Already written.\n\nA later thought"]);
   assert.deepEqual([...reconciler.confirm(r, result)], ["a1", "a2"]);
   assert.equal(reconciler.reconcile(result, r), result);
 });
 
-test("section discovery supports old full block IDs, missing IDs, and headings", () => {
-  const { text } = saved([highlight("a-long-annotation-id", 1), highlight("next", 2)]);
-  assert.equal(findSections(text.replace("^a-long-a", "^a-long-annotation-id"))[0].idLine >= 0, true);
-  assert.equal(findSections(text.replace("^a-long-a", ""))[0].idLine, -1);
-  const edited = text.replace("^next\n", "^next\n\nMy writing.\n\n## My heading\n\nOutside the passage.\n");
+test("block IDs from earlier versions are recognized, then removed without touching the writing", () => {
+  const { reconciler, r, text } = saved([highlight("a-long-annotation-id", 1), highlight("next", 2)]);
+  const old = text.replace("> Quote a-long-annotation-id\n", "> Quote a-long-annotation-id\n\n^a-long-a\n\nMine.\n")
+    .replace("> Quote next\n", "> Quote next\n\n^next\n");
+  assert.deepEqual(findSections(old).map(s => [s.idLine >= 0, s.writing]), [[true, "Mine."], [true, ""]]);
+  assert.equal(findSections(old.replace("^a-long-a", "^a-long-annotation-id"))[0].idLine >= 0, true);
+  const result = reconciler.reconcile(old, r);
+  assert.ok(!/^\^/m.test(result));
+  assert.deepEqual(sections(result).map(s => s.writing), ["Mine.", ""]);
+  assert.equal(result, text.replace("> Quote a-long-annotation-id\n", "> Quote a-long-annotation-id\n\nMine.\n"));
+});
+
+test("writing ends at the next heading", () => {
+  const { text } = saved([highlight("a1", 1), highlight("next", 2)]);
+  const edited = text.replace("> Quote next\n", "> Quote next\n\nMy writing.\n\n## My heading\n\nOutside the passage.\n");
   assert.equal(findSections(edited)[1].writing, "My writing.");
 });
 

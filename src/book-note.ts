@@ -4,12 +4,10 @@ import type { Annotation, AnnotationRecord } from "./annotations";
  * Each highlight has a quote section in its PDF's book note. Reconciliation preserves the reader's writing,
  * except under a deleted highlight, where it goes with the quote unless the reader chose to keep it.
  *
- * The passage link identifies the highlight; the block ID lets other notes link to the section.
+ * The passage link identifies the highlight. Other notes link to a passage through its quote note.
  *
  *     > [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=…&annotation=…&page=34)
  *     > [[Book notes/Book/The quoted passage|The quoted passage, as one flowing line.]]
- *
- *     ^e66da097
  *
  *     The reader's writing, up to the next section or heading.
  *
@@ -29,7 +27,10 @@ interface SectionInput {
 
 export interface Section {
   id: string;
-  /** Line indexes. The callout runs from `start` to `calloutEnd` (exclusive); `idLine` is -1 when the block ID was removed. */
+  /**
+   * Line indexes. The callout runs from `start` to `calloutEnd` (exclusive). `idLine` is the block ID line that earlier
+   * versions wrote below the callout, or -1.
+   */
   start: number;
   /** The `---` line above the section, or -1. Only a section that directly follows another one has a separator. */
   separator: number;
@@ -45,7 +46,7 @@ export interface Section {
 export const HEADER = /^>\s*\[!quote\][^\n]*?obsidian:\/\/reader-plugin\?[^)\s]*?annotation=([\w-]+)/;
 const HEADING = /^#{1,6}\s/;
 
-/** Shorten block IDs because Obsidian shows them while editing. */
+/** Earlier versions wrote a shortened block ID below each callout. */
 function blockId(annotationId: string): string {
   return annotationId.slice(0, 8);
 }
@@ -101,8 +102,6 @@ function sectionLines(input: SectionInput, target: string | undefined): string[]
   return [
     `> [!quote] p. ${input.page} · [Open passage](${passageUri(input.documentId, input.annotationId, input.page)})`,
     `> ${quoteLine(input.quote, target)}`,
-    "",
-    `^${blockId(input.annotationId)}`,
   ];
 }
 
@@ -236,6 +235,17 @@ function appendWriting(text: string, section: Section, writing: string): string 
   return finish(lines);
 }
 
+/** Removes the block IDs that earlier versions wrote below each callout. Quote notes are the link target now. */
+function dropBlockIds(text: string): string {
+  const lines = text.split("\n");
+  const sections = findSections(text).filter(section => section.idLine >= 0).reverse();
+  for (const section of sections) {
+    lines.splice(section.idLine, 1);
+    joinAt(lines, section.idLine);
+  }
+  return sections.length ? finish(lines) : text;
+}
+
 /** Removes the `· [[book.pdf#page=N|PDF]]` link that earlier sections had after **Open passage**. Only section first lines change. */
 function dropPdfLinks(text: string): string {
   return text.split("\n").map(line => HEADER.test(line) ? line.replace(/ · \[\[[^\]\n]*#page=\d+\|PDF\]\]\s*$/, "") : line).join("\n");
@@ -299,7 +309,7 @@ export class BookNoteReconciler {
   private removedWritings = new Map<string, Map<string, string>>();
 
   reconcile(text: string, record: AnnotationRecord, options: ReconcileOptions = DEFAULT_RECONCILE_OPTIONS): string {
-    text = dropPdfLinks(text);
+    text = dropBlockIds(dropPdfLinks(text));
     const quotes = new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]));
     text = formatQuotes(text, quotes, options.quoteLinks);
     text = addSeparators(text);
