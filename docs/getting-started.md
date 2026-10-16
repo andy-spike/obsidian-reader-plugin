@@ -39,7 +39,7 @@ To use Obsidian's built-in viewer for one PDF, right-click the file and choose *
 
 1. Select a sentence with the mouse. A small popup appears next to it.
 2. Click a color swatch. The passage is highlighted and saved.
-3. Click **Note** instead to highlight and start writing. Reader opens the book note at a new section for that passage, with the cursor ready.
+3. Click **Note** instead to highlight and start writing. The passage's card opens in the sidebar with the cursor in its comment.
 
 From here, read on:
 

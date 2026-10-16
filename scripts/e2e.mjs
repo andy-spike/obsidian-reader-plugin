@@ -25,6 +25,9 @@ const reader = () => `app.workspace.getLeavesOfType("reader-plugin-pdf").find(l 
 const record = () => `${reader()}.getRecord()`;
 const selector = target => `[data-reader-e2e="active"] ${target}`;
 const click = target => run("click", selector(target));
+/** The text of a highlight's quote note, or null when it has none. */
+const quoteNote = (index = 0) => `(async () => { const file = ${plugin}.quoteNotes.find(${record()}.annotations[${index}].id); return file ? await app.vault.read(file) : null; })()`;
+const cards = `app.workspace.getLeavesOfType('reader-plugin-annotations').find(l => l.getRoot() === app.workspace.rightSplit)?.view.contentEl`;
 const press = key => run("press", key);
 let originalSettings;
 const recordPaths = new Set();
@@ -218,6 +221,8 @@ try {
     recordPaths.add(`${originalSettings.folder}/${data.documentId}.json`);
     notePaths.add(data.notePath);
     waitFor(`(async () => (await app.vault.adapter.read(${record()}.notePath)).includes(${JSON.stringify(data.annotations[0].id.slice(0, 8))}))()`, "Book note section missing");
+    waitFor(`(async () => (await ${quoteNote()})?.includes('annotation: ' + ${record()}.annotations[0].id))()`, "Quote note missing");
+    waitFor(`(async () => { const path = ${plugin}.quoteNotes.find(${record()}.annotations[0].id).path.replace(/\\.md$/, ''); return (await app.vault.adapter.read(${record()}.notePath)).includes('[[' + path + '|'); })()`, "Book note quote does not link to the quote note");
   });
 
   step("recolor, copy, Note and writing update the PDF and Markdown", () => {
@@ -229,30 +234,36 @@ try {
     // Copy dismisses the popup, so open it again before choosing Note.
     click('.reader-mark');
     evaluate(`const buttons = [...${reader()}.contentEl.querySelectorAll('.reader-popup button')]; buttons.find(b => b.textContent.includes('Write about it')).click(); return true;`);
-    waitFor(`app.workspace.activeLeaf?.view.file?.path === ${record()}.notePath && !!app.workspace.activeLeaf.view.editor`, "Note did not focus the book note editor");
+    waitFor(`document.activeElement?.matches('.reader-card-comment-field') && ${cards}?.contains(document.activeElement)`, "Note did not focus the card's comment field");
     run("type", "E2E personal writing must survive deletion.");
-    waitFor(`(async () => (await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing'))()`, "Writing was not saved to Markdown");
+    waitFor(`(async () => (await ${quoteNote()})?.includes('E2E personal writing'))()`, "Comment was not saved to the quote note");
+    evaluate(`document.activeElement.blur(); return true;`);
+    waitFor(`${cards}.querySelector('.reader-card-comment')?.textContent.includes('E2E personal writing')`, "The card did not show the saved comment");
     waitFor(`!!${reader()}.contentEl.querySelector('.reader-mark-note')`, "Writing indicator did not update");
     saved();
   });
 
   step("book-note quote colors render without injected styles and follow recoloring", () => {
-    evaluate(`const leaf = app.workspace.getLeavesOfType('markdown').find(l => l.view.file?.path === ${record()}.notePath); await leaf.setViewState({type:'markdown', state:{file:${record()}.notePath, mode:'preview'}}); return true;`);
+    evaluate(`const leaf = app.workspace.getLeaf('tab'); await leaf.setViewState({type:'markdown', state:{file:${record()}.notePath, mode:'preview'}}); return true;`);
     const quote = `app.workspace.getLeavesOfType('markdown').find(l => l.view.file?.path === ${record()}.notePath)?.view.containerEl.querySelector('.callout[data-callout="quote"]')`;
     waitFor(`!!${quote} && (${quote}).style.getPropertyValue('--reader-color') === ${JSON.stringify(originalSettings.colors.find(color => color.id === 'blue').value)}`, 'Rendered quote did not take the highlight color');
     check(`!document.getElementById('reader-plugin-quote-colors')`, 'Quote colors injected a style element');
     activate(); click('.reader-mark'); click('.reader-popup [data-color="yellow"]');
     waitFor(`!!${quote} && (${quote}).style.getPropertyValue('--reader-color') === ${JSON.stringify(originalSettings.colors.find(color => color.id === 'yellow').value)}`, 'Rendered quote did not follow recoloring');
+    waitFor(`${cards}.querySelector('.reader-card').style.getPropertyValue('--reader-color') === ${JSON.stringify(originalSettings.colors.find(color => color.id === 'yellow').value)}`, 'The card did not follow recoloring');
+    evaluate(`app.workspace.getLeavesOfType('markdown').filter(l => l.view.file?.path === ${record()}.notePath).forEach(l => l.detach()); return true;`);
     saved();
   });
 
-  step("delete removes the quote and writing, and Undo restores both", () => {
+  step("delete removes the quote and its quote note, and Undo restores both", () => {
+    const id = evaluate(`return ${record()}.annotations[0].id;`);
     activate(); click('.reader-mark'); press("Delete");
     waitFor(`${record()}.annotations.length === 0`, "Delete did not remove highlight");
-    waitFor(`(async () => !(await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing'))()`, "Deleting a highlight kept its writing");
+    waitFor(`(async () => !(await app.vault.adapter.read(${record()}.notePath)).includes(${JSON.stringify(id.slice(0, 8))}))()`, "Deleting a highlight kept its quote");
+    waitFor(`!${plugin}.quoteNotes.find(${JSON.stringify(id)}) && !app.vault.getMarkdownFiles().some(f => f.path.startsWith(${JSON.stringify(folder + "/")}) && f.basename.startsWith('A reader pauses'))`, "Deleting a highlight kept its quote note");
     evaluate(`const undo = [...document.querySelectorAll('.notice a')].find(el => el.textContent === 'Undo'); if (!undo) throw new Error('Missing Undo'); undo.click(); return true;`);
     waitFor(`${record()}.annotations.length === 1`, "Undo did not restore highlight");
-    waitFor(`(async () => (await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing'))()`, "Undo did not restore writing");
+    waitFor(`(async () => (await ${quoteNote()})?.includes('E2E personal writing'))()`, "Undo did not restore the comment");
     saved();
   });
 
@@ -272,7 +283,7 @@ try {
 
   step("book note follows PDFs, stays dismissed, and reopens beside the Reader", () => {
     activate();
-    waitFor(`app.workspace.getLeavesOfType('markdown').some(l => l.view.file?.path === ${record()}.notePath && l.getRoot() === app.workspace.rightSplit)`, "Sidebar did not follow the first PDF");
+    waitFor(`${cards}?.querySelector('.reader-annotations-title')?.textContent === 'First' && !!${cards}.querySelector('.reader-card')`, "Sidebar cards did not follow the first PDF");
     evaluate(`const leaf = app.workspace.getLeaf('tab'); await leaf.openFile(app.vault.getAbstractFileByPath(${JSON.stringify(second)})); app.workspace.setActiveLeaf(leaf, {focus:true}); return true;`);
     waitFor(`app.workspace.getLeavesOfType('reader-plugin-annotations').some(l => l.view.contentEl.textContent.includes('Second'))`, "Second PDF did not get a placeholder");
     activate(); press('a');
@@ -290,13 +301,20 @@ try {
 
   step("Open passage links return to the highlight without replacing the note", () => {
     const note = evaluate(`return ${record()}.notePath;`);
-    evaluate(`const leaf = app.workspace.getLeavesOfType('markdown').find(l => l.view.file?.path === ${JSON.stringify(note)}); await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(note)},mode:'preview'}}); await app.workspace.revealLeaf(leaf); return true;`);
+    evaluate(`const leaf = app.workspace.getLeaf('split'); await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(note)},mode:'preview'}}); await app.workspace.revealLeaf(leaf); return true;`);
     waitFor(`(() => { const link = [...document.querySelectorAll('a[href^="obsidian://reader-plugin?"]')].find(el => el.getBoundingClientRect().width > 0); if (!link) return false; link.dataset.readerE2eLink = 'visible'; return true; })()`, "Passage link did not render");
     run('click', '[data-reader-e2e-link="visible"]');
     waitFor(`!!${reader()}.contentEl.querySelector('.reader-mark.is-flashing')`, "Passage link did not reveal and pulse the highlight");
     check(`app.workspace.getLeavesOfType('markdown').some(l => l.view.file?.path === ${JSON.stringify(note)})`, "Passage navigation replaced the note");
-    evaluate(`const leaf = app.workspace.getLeavesOfType('markdown').find(l => l.view.file?.path === ${JSON.stringify(note)}); await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(note)},mode:'source'}}); return true;`);
+    evaluate(`app.workspace.getLeavesOfType('markdown').filter(l => l.view.file?.path === ${JSON.stringify(note)}).forEach(l => l.detach()); return true;`);
     activate();
+  });
+
+  step("the card's Show in the PDF button reveals and pulses the highlight", () => {
+    activate();
+    waitFor(`!${reader()}.contentEl.querySelector('.reader-mark.is-flashing')`, "The earlier pulse did not end");
+    evaluate(`${cards}.querySelector('.reader-card button[aria-label="Show in the PDF"]').click(); return true;`);
+    waitFor(`!!${reader()}.contentEl.querySelector('.reader-mark.is-flashing')`, "Show in the PDF did not pulse the highlight");
   });
 
   step("highlight mode creates a passage directly and Escape clears an ordinary selection", () => {
@@ -313,13 +331,15 @@ try {
     saved();
   });
 
-  step("the selection's Note button highlights the passage and focuses its new section", () => {
+  step("the selection's Note button highlights the passage and focuses its new card", () => {
     selectText("Select this passage, highlight it, and add a comment.");
     waitFor(`!${reader()}.contentEl.querySelector('.reader-popup').hidden`, "Note selection popup missing");
     click('.reader-popup .reader-text-button');
-    waitFor(`${record()}.annotations.length === 3 && app.workspace.activeLeaf?.view.file?.path === ${record()}.notePath && !!app.workspace.activeLeaf.view.editor`, "Note did not create a highlight and focus the editor");
+    waitFor(`${record()}.annotations.length === 3 && document.activeElement?.matches('.reader-card-comment-field') && ${cards}?.contains(document.activeElement)`, "Note did not create a highlight and focus its card");
     run('type', 'E2E writing for the selection Note action.');
-    waitFor(`(async () => (await app.vault.adapter.read(${record()}.notePath)).includes('E2E writing for the selection Note action.'))()`, "Selection Note writing was not saved");
+    const index = evaluate(`return ${record()}.annotations.findIndex(a => a.quote.exact.startsWith('Select this passage'));`);
+    waitFor(`(async () => (await ${quoteNote(index)})?.includes('E2E writing for the selection Note action.'))()`, "Selection Note comment was not saved");
+    evaluate(`document.activeElement.blur(); return true;`);
     saved();
     activate();
   });
@@ -395,7 +415,7 @@ try {
     assert.equal(after.state.page, before.state.page);
     assert.equal(after.state.zoom, before.state.zoom);
     assert.ok(Math.abs(after.state.offset - before.state.offset) < 0.02, 'Reload changed the position within the page');
-    check(`(await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing')`, "Reload lost writing");
+    check(`(await ${quoteNote()})?.includes('E2E personal writing')`, "Reload lost the comment");
   });
 
   step("searchable settings refresh added colors and save drag reordering", () => {
@@ -440,7 +460,7 @@ try {
     assert.equal(after.state.page, before.state.page);
     assert.equal(after.state.zoom, before.state.zoom);
     assert.ok(Math.abs(after.state.offset - before.state.offset) < 0.02, 'Restart changed the position within the page');
-    check(`(await app.vault.adapter.read(${record()}.notePath)).includes('E2E personal writing')`, "Restart lost writing");
+    check(`(await ${quoteNote()})?.includes('E2E personal writing')`, "Restart lost the comment");
   });
   console.log(`Passed ${passed} real Obsidian workflow checks.`);
 } catch (error) {

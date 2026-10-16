@@ -2,14 +2,14 @@
 
 Read PDFs in Obsidian, highlight passages, and write about them in Markdown notes that live in your vault.
 
-Reading Desk is an Obsidian desktop plugin. It replaces the built-in PDF viewer with a continuous-scroll reader. Every PDF gets a book note, an ordinary Markdown note with a quote for each highlight and room to write under it.
+Reading Desk is an Obsidian desktop plugin. It replaces the built-in PDF viewer with a continuous-scroll reader. Every PDF gets a book note, an ordinary Markdown note with a quote for each highlight. Each highlight also gets a quote note that holds your comment about it.
 
 ## What you can do
 
 - Read PDFs in one continuous scroll, with zoom, a table of contents, and page controls.
 - Pick up where you left off. Reading Desk remembers your page and zoom for each PDF.
 - Highlight text in colors you choose, one click per highlight or in highlight mode.
-- Write about a passage in the book note, under its quote. Click **Open passage** to jump back to it in the PDF.
+- Write about a passage in its card in the sidebar. The comment saves to the passage's own quote note. Click **Open passage** to jump back to it in the PDF.
 - Copy highlighted text, recolor highlights, and delete them with Undo.
 
 ## Install
@@ -24,7 +24,7 @@ It needs Obsidian desktop 1.14.4 or newer. It does not run on mobile.
 
 1. Click a PDF in your vault. It opens in Reading Desk.
 2. Select a passage and click a color to highlight it.
-3. Click **Note** in the popup to highlight and start writing in the book note.
+3. Click **Note** in the popup to highlight and start writing about the passage.
 
 ## Guides
 

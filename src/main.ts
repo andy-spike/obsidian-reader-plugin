@@ -2,6 +2,7 @@ import { MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, App, WorkspaceL
 
 import { ANNOTATION_FOLDER, AnnotationStore, LEGACY_ANNOTATION_FOLDER } from "./annotations";
 import { BookNotes } from "./book-notes";
+import { QuoteNotes } from "./quote-notes";
 import { BookNoteFollowing } from "./book-note-following";
 import { ObsidianBookNoteWorkspace } from "./book-note-workspace";
 import { ReaderView, READER_VIEW } from "./reader-view";
@@ -21,6 +22,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
   private store!: AnnotationStore;
   private settingTab!: ReaderSettingTab;
   private bookNotes!: BookNotes;
+  private quoteNotes!: QuoteNotes;
   /** Redraws the highlight colors of quotes in book notes. */
   private paintQuotes: (() => void) | null = null;
   async onload(): Promise<void> {
@@ -29,12 +31,18 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       error => console.error("Reading Desk: could not save reading state.", error));
     this.settings = this.saved.settings;
     const store = this.store = new AnnotationStore(this.app.vault.adapter, { folder: this.settings.folder });
-    const bookNotes = this.bookNotes = new BookNotes(this.app, store, () => this.settings);
+    const quoteNotes = this.quoteNotes = new QuoteNotes(this.app);
+    const bookNotes = this.bookNotes = new BookNotes(this.app, store, quoteNotes, () => this.settings);
     // Saves made in this window bring the book note up to date; another window's saves are left to that window.
     this.register(store.subscribe(record => bookNotes.schedule(record)));
     this.register(() => bookNotes.dispose());
     this.registerEvent(this.app.vault.on("modify", file => { if (file instanceof TFile) void bookNotes.changed(file); }));
-    this.registerEvent(this.app.vault.on("delete", file => bookNotes.deleted(file.path)));
+    this.registerEvent(this.app.vault.on("delete", file => {
+      bookNotes.deleted(file.path);
+      quoteNotes.deleted(file.path);
+    }));
+    // Obsidian reports each note it reads, including quote notes edited, created, or synced from elsewhere.
+    this.registerEvent(this.app.metadataCache.on("changed", (file, text) => quoteNotes.changed(file, text)));
     this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => { if (info.file) bookNotes.edited(info.file.path, () => editor.getValue()); }));
     const workspace = this.app.workspace;
     const following = this.following = new BookNoteFollowing(new ObsidianBookNoteWorkspace(this.app, bookNotes), bookNotes, () => this.settings);
@@ -45,7 +53,27 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       paintQuotes();
       void following.ready(reader).catch(reportNoteError);
     };
-    this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, () => following.current));
+    this.registerView(ANNOTATIONS_VIEW, leaf => new AnnotationsView(leaf, {
+      source: () => following.current,
+      settings: () => this.settings,
+      comment: annotationId => quoteNotes.comment(annotationId),
+      quoteNotePath: annotationId => quoteNotes.find(annotationId)?.path ?? "",
+      saveComment: (record, annotationId, comment) => bookNotes.comment(record, annotationId, comment),
+      openPassage: (reader, annotationId) => {
+        void workspace.revealLeaf(reader.leaf).then(() => reader.showAnnotationWhenReady(annotationId)).catch(reportNoteError);
+      },
+      openQuoteNote: (record, annotationId) => {
+        void bookNotes.sync(record).then(() => {
+          const file = quoteNotes.find(annotationId);
+          if (file) return workspace.getLeaf("tab").openFile(file);
+        }).catch(reportNoteError);
+      },
+      openBookNote: reader => openNote(reader, null, "beside"),
+      subscribe: listener => {
+        const stops = [store.subscribe(listener), quoteNotes.subscribe(listener)];
+        return () => stops.forEach(stop => stop());
+      },
+    }));
     /** Book note quotes take their highlight's color, matched by the highlight ID in the quote's link, without changing the note. */
     const paintQuoteElements = (root: HTMLElement, reset = false) => {
       const colors = new Map((reset ? [] : store.loaded().flatMap(record => record.annotations)).map(annotation =>
@@ -115,6 +143,10 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         else delete this.settings.pdfPageColors[path];
         void this.saveSettings();
       },
+    }));
+    // Comments show as dots on highlights, so redraw them when a quote note changes.
+    this.register(quoteNotes.subscribe(documentId => {
+      this.readers().forEach(reader => { if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations(); });
     }));
     // What you wrote in a book note shows as dots on highlights, so redraw them when it changes.
     // A PDF's first highlight creates its note; the sidebar tab then switches from its placeholder to the note.

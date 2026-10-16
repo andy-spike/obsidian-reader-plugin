@@ -7,7 +7,7 @@ import type { Annotation, AnnotationRecord } from "./annotations";
  * The passage link identifies the highlight; the block ID lets other notes link to the section.
  *
  *     > [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=…&annotation=…&page=34)
- *     > [[The quoted passage, as one flowing line.]]
+ *     > [[Book notes/Book/The quoted passage|The quoted passage, as one flowing line.]]
  *
  *     ^e66da097
  *
@@ -16,7 +16,8 @@ import type { Annotation, AnnotationRecord } from "./annotations";
  *     ---
  *
  * Separators belong to the section below them. A reader's heading replaces the separator.
- * The quote is a wikilink unless the reader turned that off; either form counts as unedited.
+ * The quote links to its highlight's quote note (see quote-note.ts), which holds the reader's comment about it.
+ * A quote counts as unedited while its text is unchanged, wherever its link points.
  */
 
 interface SectionInput {
@@ -41,7 +42,7 @@ export interface Section {
   writing: string;
 }
 
-const HEADER = /^>\s*\[!quote\][^\n]*?obsidian:\/\/reader-plugin\?[^)\s]*?annotation=([\w-]+)/;
+export const HEADER = /^>\s*\[!quote\][^\n]*?obsidian:\/\/reader-plugin\?[^)\s]*?annotation=([\w-]+)/;
 const HEADING = /^#{1,6}\s/;
 
 /** Shorten block IDs because Obsidian shows them while editing. */
@@ -49,7 +50,7 @@ function blockId(annotationId: string): string {
   return annotationId.slice(0, 8);
 }
 
-function passageUri(documentId: string, annotationId: string, page: number): string {
+export function passageUri(documentId: string, annotationId: string, page: number): string {
   return `obsidian://reader-plugin?document=${documentId}&annotation=${annotationId}&page=${page}`;
 }
 
@@ -58,7 +59,7 @@ const SEPARATOR = "---";
 /**
  * Join PDF line breaks, preserving hyphens within words. The same normalization detects user edits to older quotes.
  */
-function quoteText(quote: string): string {
+export function quoteText(quote: string): string {
   const lines = quote.replace(/\r\n?/g, "\n").split("\n").map(line => line.trim()).filter(Boolean);
   let text = "";
   for (const line of lines) {
@@ -69,38 +70,37 @@ function quoteText(quote: string): string {
   return text.replace(/\s+/g, " ");
 }
 
-/** Longest link target, so that clicking the link can create a note without exceeding file name limits. */
-const LINK_TARGET_LENGTH = 120;
-
 /**
- * Wraps a flowing quote in a wikilink to a note named after it. When the quote has characters a note name can't hold,
- * or is too long for one, the link shows the quote through an alias. Brackets and `|` can't appear inside a link
- * without changing the visible text, so such a quote stays plain.
+ * Links a flowing quote to its highlight's quote note, showing the quote as the link text. Brackets and `|` can't appear
+ * inside a link without changing the visible text, so such a quote stays plain, as does one without a quote note yet.
  */
-function linkedQuote(flowed: string): string {
-  if (/[[\]|]/.test(flowed)) return flowed;
-  const target = noteFileName(flowed).slice(0, LINK_TARGET_LENGTH).trim();
-  return target === flowed ? `[[${flowed}]]` : `[[${target}|${flowed}]]`;
+function linkedQuote(flowed: string, target: string | undefined): string {
+  if (!target || /[[\]|]/.test(flowed)) return flowed;
+  return `[[${target}|${flowed}]]`;
 }
 
-/** The quote's text in a section, as one flowing line, linked or plain. */
-function quoteLine(quote: string, linkQuotes: boolean): string {
-  const flowed = quoteText(quote);
-  return linkQuotes ? linkedQuote(flowed) : flowed;
+/** The quote's text in a section, as one flowing line, linked to its quote note when it has one. */
+function quoteLine(quote: string, target: string | undefined): string {
+  return linkedQuote(quoteText(quote), target);
 }
 
-/** Whether a section still shows the highlight's quote as the plugin wrote it, in either the linked or the plain form. */
-function isUneditedQuote(sectionQuote: string, quote: string): boolean {
+/** The text a section shows for its quote: a link's visible text, or the plain text. */
+function shownQuote(sectionQuote: string): string {
   const current = quoteText(sectionQuote);
-  const flowed = quoteText(quote);
-  return current === flowed || current === linkedQuote(flowed);
+  const link = /^\[\[([^[\]|]*)(?:\|([^[\]|]*))?\]\]$/.exec(current);
+  return link ? link[2] ?? link[1]! : current;
+}
+
+/** Whether a section still shows the highlight's quote as the plugin wrote it. Where its link points doesn't matter. */
+function isUneditedQuote(sectionQuote: string, quote: string): boolean {
+  return shownQuote(sectionQuote) === quoteText(quote);
 }
 
 /** The lines of a new section, without the blank lines around it. */
-function sectionLines(input: SectionInput, linkQuotes: boolean): string[] {
+function sectionLines(input: SectionInput, target: string | undefined): string[] {
   return [
     `> [!quote] p. ${input.page} · [Open passage](${passageUri(input.documentId, input.annotationId, input.page)})`,
-    `> ${quoteLine(input.quote, linkQuotes)}`,
+    `> ${quoteLine(input.quote, target)}`,
     "",
     `^${blockId(input.annotationId)}`,
   ];
@@ -159,16 +159,16 @@ function addSeparators(text: string): string {
 }
 
 /**
- * Rewrites unedited quotes in the current form: one flowing line, linked or plain as `linkQuotes` says.
- * This also updates older notes that kept the PDF's line breaks. `quotes` maps highlight IDs to their quotes.
+ * Rewrites unedited quotes in the current form: one flowing line, linked to the highlight's quote note.
+ * `quotes` maps highlight IDs to their quotes, and `links` to their quote notes.
  */
-function formatQuotes(text: string, quotes: Map<string, string>, linkQuotes: boolean): string {
+function formatQuotes(text: string, quotes: Map<string, string>, links: Map<string, string>): string {
   const lines = text.split("\n");
   let changed = false;
   for (const section of findSections(text).reverse()) {
     const quote = quotes.get(section.id);
     if (quote === undefined || !isUneditedQuote(section.quote, quote)) continue;
-    const line = `> ${quoteLine(quote, linkQuotes)}`;
+    const line = `> ${quoteLine(quote, links.get(section.id))}`;
     const isSingleLine = section.calloutEnd - section.start === 2;
     if (isSingleLine && lines[section.start + 1] === line) continue;
     lines.splice(section.start + 1, section.calloutEnd - section.start - 1, line);
@@ -192,7 +192,7 @@ function finish(lines: string[]): string {
  * Adds a section before `before`, or at the end when it is null. Headings directly above `before` stay with it,
  * so a passage from an earlier chapter lands above that chapter's heading.
  */
-function insertSection(text: string, input: SectionInput, before: Section | null, linkQuotes: boolean): string {
+function insertSection(text: string, input: SectionInput, before: Section | null, target: string | undefined): string {
   const lines = text.split("\n");
   let at = lines.length;
   if (before) {
@@ -203,7 +203,7 @@ function insertSection(text: string, input: SectionInput, before: Section | null
   } else {
     while (at > 0 && !lines[at - 1]!.trim()) at--;
   }
-  const added = sectionLines(input, linkQuotes);
+  const added = sectionLines(input, target);
   lines.splice(at, 0, ...added);
   const end = at + added.length;
   joinAt(lines, end);
@@ -286,11 +286,11 @@ const comments = (record: AnnotationRecord): MovedComment[] => [...record.annota
 export interface ReconcileOptions {
   /** Keep the section of a deleted highlight when the reader wrote under it, instead of removing the writing with the quote. */
   keepWritingOfDeleted: boolean;
-  /** Write quotes as wikilinks, so each can open or create a note named after it. */
-  linkQuotes: boolean;
+  /** Link paths of quote notes by highlight ID. A quote without one is written as plain text. */
+  quoteLinks: Map<string, string>;
 }
 
-const DEFAULT_RECONCILE_OPTIONS: ReconcileOptions = { keepWritingOfDeleted: false, linkQuotes: true };
+const DEFAULT_RECONCILE_OPTIONS: ReconcileOptions = { keepWritingOfDeleted: false, quoteLinks: new Map() };
 
 /** Owns the complete text policy. Only quotes confirmed after a successful vault write may later be removed. */
 export class BookNoteReconciler {
@@ -301,7 +301,7 @@ export class BookNoteReconciler {
   reconcile(text: string, record: AnnotationRecord, options: ReconcileOptions = DEFAULT_RECONCILE_OPTIONS): string {
     text = dropPdfLinks(text);
     const quotes = new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]));
-    text = formatQuotes(text, quotes, options.linkQuotes);
+    text = formatQuotes(text, quotes, options.quoteLinks);
     text = addSeparators(text);
     const ids = new Set(record.annotations.map(annotation => annotation.id));
     const known = this.quotes.get(record.documentId);
@@ -324,7 +324,7 @@ export class BookNoteReconciler {
         const other = record.annotations.find(candidate => candidate.id === section.id);
         return other && byPosition(annotation, other) < 0;
       }) ?? null;
-      text = insertSection(text, { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact }, later, options.linkQuotes);
+      text = insertSection(text, { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact }, later, options.quoteLinks.get(annotation.id));
       const removedWriting = this.removedWritings.get(record.documentId)?.get(annotation.id);
       const inserted = findSections(text).find(section => section.id === annotation.id);
       if (removedWriting && inserted) text = appendWriting(text, inserted, removedWriting);

@@ -36,10 +36,13 @@ export class ObsidianBookNoteWorkspace implements BookNoteWorkspace {
     return this.app.workspace.createLeafBySplit(reader.leaf, "vertical");
   }
 
+  /** The sidebar shows the PDF's highlights as cards; beside the PDF, its book note opens as a Markdown note. */
   async display(leaf: WorkspaceLeaf, record: AnnotationRecord | null): Promise<void> {
     const file = record ? this.notes.file(record) : null;
     const state = leaf.getViewState();
-    if (file) {
+    if (this.inSidebar(leaf)) {
+      if (state.type !== ANNOTATIONS_VIEW) await leaf.setViewState({ type: ANNOTATIONS_VIEW, active: false });
+    } else if (file) {
       if (state.type !== "markdown" || state.state?.file !== file.path) await leaf.setViewState({ type: "markdown", state: { file: file.path, mode: "source" }, active: false });
     } else if (record || state.type === "empty") {
       if (state.type !== ANNOTATIONS_VIEW) await leaf.setViewState({ type: ANNOTATIONS_VIEW, active: false });

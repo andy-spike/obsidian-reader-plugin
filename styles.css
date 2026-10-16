@@ -62,10 +62,34 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 .reader-view button.reader-text-button:hover { color: var(--text-normal); }
 .reader-button-icon { display: flex; }
 .reader-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-/* Comment fields grow with their text up to a limit, then scroll. They never show a resize handle. */
 
-/* ---- Annotations sidebar ---- */
-/* Full-width cards with a color strip, grouped under sticky page headings. Adjacent cards are divided by a hairline that also breaks the strip. */
+/* ---- Book note cards in the sidebar ---- */
+/* One card per highlight: a color strip, the quote, and a comment section that opens below it. */
+.reader-cards-header { display: flex; align-items: center; gap: var(--size-4-1); padding-inline-end: var(--size-4-2); }
+.reader-cards-header .reader-annotations-title { flex: 1; }
+.reader-annotations button.reader-icon-button { height: auto; padding: var(--size-2-2); background: transparent; box-shadow: none; }
+.reader-card { margin: 0 var(--reader-inset) var(--size-4-3); padding: var(--size-4-2) var(--size-4-3) var(--size-4-3); border: 1px solid var(--background-modifier-border); border-left: 3px solid var(--reader-color); border-radius: var(--radius-m); background: color-mix(in srgb, var(--reader-color) 6%, var(--background-primary)); }
+.reader-card-top { display: flex; align-items: center; gap: 2px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.reader-card-page { flex: 1; font-variant-numeric: tabular-nums; }
+/* The card's actions stay quiet until the card is hovered or one of them has focus. */
+.reader-card-top .reader-icon-button { opacity: 0; transition: opacity 100ms ease; }
+.reader-card:hover .reader-card-top .reader-icon-button, .reader-card-top .reader-icon-button:focus-visible { opacity: 1; }
+@media (hover: none) { .reader-card-top .reader-icon-button { opacity: 1; } }
+.reader-card-quote { margin: var(--size-4-1) 0 var(--size-4-2); padding: 0; border: 0; font-size: var(--font-ui-medium); line-height: 1.5; color: var(--text-normal); user-select: text; }
+.reader-annotations button.reader-card-toggle { display: flex; align-items: center; gap: var(--size-2-2); height: auto; padding: var(--size-2-1) var(--size-2-2) var(--size-2-1) 0; background: transparent; box-shadow: none; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.reader-annotations button.reader-card-toggle:hover { color: var(--text-normal); }
+.reader-card-chevron { display: flex; transition: transform 120ms ease; }
+.reader-card-chevron svg { width: 14px; height: 14px; }
+.reader-card-toggle[aria-expanded="true"] .reader-card-chevron { transform: rotate(90deg); }
+.reader-card-comment { margin-top: var(--size-4-1); padding: var(--size-2-3) var(--size-4-2); border-radius: var(--radius-s); font-size: var(--font-ui-small); line-height: 1.55; cursor: text; }
+.reader-card-comment:hover { background: var(--background-modifier-hover); }
+.reader-card-comment > div > :first-child { margin-top: 0; }
+.reader-card-comment > div > :last-child { margin-bottom: 0; }
+/* Comment fields grow with their text and never show a resize handle. */
+.reader-annotations textarea.reader-card-comment-field { display: block; width: 100%; min-height: 3.5em; margin-top: var(--size-4-1); padding: var(--size-2-3) var(--size-4-2); resize: none; overflow: hidden; font-size: var(--font-ui-small); line-height: 1.55; }
+.reader-annotations button.reader-card-add { display: block; width: 100%; height: auto; margin-top: var(--size-4-1); padding: var(--size-2-3) var(--size-4-2); border-radius: var(--radius-s); background: transparent; box-shadow: none; color: var(--text-faint); font-size: var(--font-ui-small); text-align: start; cursor: text; }
+.reader-annotations button.reader-card-add:hover { background: var(--background-modifier-hover); color: var(--text-muted); }
+
 /* Passage quotes in book notes take their highlight's color, set per highlight by the plugin as --reader-color. */
 .callout[data-callout="quote"]:has(a[href^="obsidian://reader-plugin"]) { border-left: 3px solid var(--reader-color, rgb(var(--callout-quote))); background-color: color-mix(in srgb, var(--reader-color, transparent) 10%, transparent); mix-blend-mode: normal; }
 .callout[data-callout="quote"]:has(a[href^="obsidian://reader-plugin"]) .callout-icon { color: var(--reader-color, inherit); }
