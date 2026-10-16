@@ -8,7 +8,7 @@
   let { actions }: Props = $props();
 
   let current = $state.raw<CardsState>({ title: "", empty: "", cards: [] });
-  /** Cards whose comment section the reader opened or closed. Others are open when they have a comment. */
+  /** Comments the reader folded away or opened again. A comment shows until it is folded. */
   let expanded = $state<Record<string, boolean>>({});
   /** The card whose comment is being typed, and its text. While typing, saved changes from elsewhere don't replace it. */
   let editing = $state<string | null>(null);
@@ -27,12 +27,11 @@
     startEditing(card);
   }
 
-  const isOpen = (card: CardData) => expanded[card.id] ?? !!card.comment;
+  const isOpen = (card: CardData) => expanded[card.id] ?? true;
 
   function toggle(card: CardData): void {
     const open = !isOpen(card);
     expanded[card.id] = open;
-    if (open && !card.comment) startEditing(card);
     if (!open && editing === card.id) finishEditing();
   }
 
@@ -85,43 +84,48 @@
   const rendered = (card: CardData): Attachment<HTMLElement> => node => actions.render(node, card.id, card.comment);
 </script>
 
-<div class="reader-cards-header">
+<header class="reader-cards-header">
   <div class="reader-annotations-title">{current.title}</div>
   {#if current.cards.length}
     <IconButton icon="file-text" label="Open the book note" onclick={() => actions.openBookNote()} />
   {/if}
-</div>
+</header>
 
 {#if !current.cards.length}
   <div class="reader-empty">{current.empty}</div>
 {/if}
 
-{#each current.cards as card (card.id)}
-  <section class="reader-card" style:--reader-color={card.color}>
-    <div class="reader-card-top">
-      <span class="reader-card-page">p. {card.page}</span>
-      <IconButton icon="locate" label="Show in the PDF" onclick={() => actions.openPassage(card.id)} />
-      <IconButton icon="external-link" label="Open the quote note" onclick={() => actions.openQuoteNote(card.id)} />
-    </div>
-    <blockquote class="reader-card-quote">{card.quote}</blockquote>
-    <button type="button" class="reader-card-toggle" aria-expanded={isOpen(card)} onclick={() => toggle(card)}>
-      <span class="reader-card-chevron" {@attach icon("chevron-right")}></span>
-      Comment
-    </button>
-    {#if isOpen(card)}
+<ol class="reader-cards">
+  {#each current.cards as card (card.id)}
+    <li class="reader-card" style:--reader-color={card.color}>
+      <div class="reader-card-top">
+        <span class="reader-card-page">p. {card.page}</span>
+        <span class="reader-card-actions">
+          <IconButton icon="locate" label="Show in the PDF" onclick={() => actions.openPassage(card.id)} />
+          <IconButton icon="arrow-up-right" label="Open the quote note" onclick={() => actions.openQuoteNote(card.id)} />
+        </span>
+      </div>
+      <p class="reader-card-quote"><mark>{card.quote}</mark></p>
+      {#if card.comment}
+        <button type="button" class="reader-card-toggle" aria-expanded={isOpen(card)} onclick={() => toggle(card)}>
+          <span class="reader-card-chevron" {@attach icon("chevron-right")}></span>Comment
+        </button>
+      {/if}
       {#if editing === card.id}
         <textarea
-          class="reader-card-comment-field" rows="2" placeholder="Write about this passage…"
+          class="reader-card-comment-field" rows="1" placeholder="Write about this passage"
           bind:value={draft} {oninput} {onkeydown} onblur={finishEditing} {@attach field}
         ></textarea>
       {:else if card.comment}
-        {#key card.comment}
-          <div class="reader-card-comment markdown-rendered" role="button" tabindex="0" onclick={event => onPreviewClick(event, card)}
-            onkeydown={event => { if (event.key === "Enter") startEditing(card); }} {@attach rendered(card)}></div>
-        {/key}
+        {#if isOpen(card)}
+          {#key card.comment}
+            <div class="reader-card-comment markdown-rendered" role="button" tabindex="0" onclick={event => onPreviewClick(event, card)}
+              onkeydown={event => { if (event.key === "Enter") startEditing(card); }} {@attach rendered(card)}></div>
+          {/key}
+        {/if}
       {:else}
-        <button type="button" class="reader-card-add" onclick={() => startEditing(card)}>Write about this passage…</button>
+        <button type="button" class="reader-card-add" onclick={() => startEditing(card)}>Add comment</button>
       {/if}
-    {/if}
-  </section>
-{/each}
+    </li>
+  {/each}
+</ol>
