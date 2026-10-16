@@ -21,7 +21,7 @@ Obsidian doesn't index hidden folders, so highlight records stay out of the file
 
 ## Renaming and moving PDFs
 
-Rename or move a PDF inside Obsidian and its highlights, book note, and reading position follow it. The same holds for the book note.
+Rename or move a PDF inside Obsidian and its highlights, book note, reading position, and page colors follow it. The same holds for the book note.
 
 If you move a PDF outside Obsidian, Reading Desk finds it again by its contents, as long as nothing else is at the old path.
 

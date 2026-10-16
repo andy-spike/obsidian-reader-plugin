@@ -32,6 +32,7 @@ Open the command palette and search for "Reading Desk". Every command can have a
 | Highlight selected PDF passage and write about it in the book note | Reader tab, with text selected |
 | Zoom in, Zoom out, Reset zoom | Reader tab |
 | Show table of contents | Reader tab |
+| Toggle dark pages for this PDF | Reader tab |
 
 ## Mouse shortcuts
 
@@ -40,3 +41,4 @@ Open the command palette and search for "Reading Desk". Every command can have a
 | Ctrl/Cmd and wheel | Zoom around the pointer |
 | Right-click the highlighter button | Choose the highlight mode's color |
 | Right-click the book note button | Open the book note in the other place, once |
+| Right-click the page colors button | Choose page colors for this PDF |

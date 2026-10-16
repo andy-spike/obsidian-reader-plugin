@@ -93,3 +93,16 @@ test("book note settings have defaults and clean paths", () => {
   assert.equal(saved.noteTemplate, "Templates/Book.md");
   assert.equal(loadSettings({ notesFolder: "/" }).notesFolder, "Book notes");
 });
+
+test("page colors follow Obsidian's color scheme by default, and PDFs start without their own choice", () => {
+  const settings = loadSettings(null);
+  assert.equal(settings.pageColors, "follow");
+  assert.deepEqual(settings.pdfPageColors, {});
+});
+
+test("saved page colors load, and invalid ones fall back to the default", () => {
+  const settings = loadSettings({ pageColors: "inverted", pdfPageColors: { "Books/A.pdf": "original", "Books/B.pdf": "dim" } });
+  assert.equal(settings.pageColors, "inverted");
+  assert.deepEqual(settings.pdfPageColors, { "Books/A.pdf": "original" });
+  assert.equal(loadSettings({ pageColors: "dim" }).pageColors, "follow");
+});

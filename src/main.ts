@@ -8,6 +8,7 @@ import { ReaderView, READER_VIEW } from "./reader-view";
 import { AnnotationsView, ANNOTATIONS_VIEW } from "./annotations-view";
 import { SavedReadingState } from "./reading-state";
 import { stopPdfWorker } from "./pdf-engine";
+import { forgetPdfPageColors, renamePdfPageColors } from "./page-colors";
 import { colorOf, loadSettings, NotePlace, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
 
 export default class ReaderPlugin extends Plugin implements SettingsHost {
@@ -109,6 +110,11 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       writing: (record, annotationId) => bookNotes.writing(record, annotationId),
       lastPosition: path => this.saved.position(path),
       rememberPosition: (path, position) => this.saved.remember(path, position),
+      choosePageColors: (path, choice) => {
+        if (choice) this.settings.pdfPageColors[path] = choice;
+        else delete this.settings.pdfPageColors[path];
+        void this.saveSettings();
+      },
     }));
     // What you wrote in a book note shows as dots on highlights, so redraw them when it changes.
     // A PDF's first highlight creates its note; the sidebar tab then switches from its placeholder to the note.
@@ -266,6 +272,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     readerCommand("reset-zoom", "Reset zoom", view => view.resetZoom());
     readerCommand("table-of-contents", "Show table of contents", view => void view.openOutline());
     readerCommand("open-book-note", "Open book note", view => openNote(view, null));
+    readerCommand("toggle-page-colors", "Toggle dark pages for this PDF", view => view.togglePageColors());
     this.addCommand({ id: "toggle-highlight-mode", name: "Toggle highlight mode", callback: toggleHighlightMode });
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       if (file instanceof TFile && file.extension === "pdf") {
@@ -273,7 +280,10 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
         menu.addItem(item => item.setTitle("Open in Obsidian's normal PDF viewer").setIcon("file-text").onClick(() => void open(file, undefined, true)));
       }
     }));
+    // A PDF keeps its own page colors when it or its folder is renamed, and forgets them when deleted.
+    this.registerEvent(this.app.vault.on("delete", file => { if (forgetPdfPageColors(this.settings.pdfPageColors, file.path)) void this.saveSettings(); }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (renamePdfPageColors(this.settings.pdfPageColors, oldPath, file.path)) void this.saveSettings();
       this.saved.rename(oldPath, file.path);
       if (file instanceof TFile) bookNotes.renamed(file, oldPath);
       void store.rename(oldPath, file.path).catch((error: unknown) => new Notice(`Could not update annotation source: ${error instanceof Error ? error.message : String(error)}`));
