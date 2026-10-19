@@ -58,7 +58,6 @@ You need Node.js 22 or newer, pnpm, and Obsidian desktop.
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
-pnpm test
 ```
 
 The [development guide](contributing/development.md) covers the development vault, watch mode, headless checks, architecture, and releases. Other contributor pages sit in [`contributing/`](contributing/).

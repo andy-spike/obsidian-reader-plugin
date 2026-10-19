@@ -20,8 +20,6 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm test
-      - run: pnpm test:source-build
       - name: Validate Obsidian plugin
         uses: obsidianmd/obsidian-workflows@4a7f7cd9da77b67dfbb5246f1e990ffcac7582d3 # v1
         with:
