@@ -13,6 +13,14 @@ import type { OutlineNode } from "./outline";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
 import { mount, unmount } from "svelte";
 
+interface PdfLink {
+  subtype: string;
+  rect: [number, number, number, number];
+  url?: string;
+  dest?: string | unknown[];
+  overlaidText?: string;
+}
+
 interface PdfOutlineItem { title: string; dest: string | unknown[] | null; items: PdfOutlineItem[] }
 
 function isPdfReference(value: unknown): value is { num: number; gen: number } {
@@ -575,6 +583,7 @@ export class ReaderView extends FileView {
         el.createDiv({ cls: "endOfContent" });
         slot.text = { layer, el };
         this.drawMarks(slot);
+        await this.renderLinks(slot, page, stale);
       }
     } catch (error) {
       if (error instanceof RenderingCancelledException || stale()) return;
@@ -587,6 +596,55 @@ export class ReaderView extends FileView {
     }
   }
 
+  private async renderLinks(slot: PageSlot, page: PDFPageProxy, stale: () => boolean): Promise<void> {
+    const pdf = this.pdf!;
+    const annotations = await page.getAnnotations() as PdfLink[];
+    if (stale()) return;
+    const viewport = page.getViewport({ scale: 1 });
+    const layer = slot.el.createDiv({ cls: "reader-link-layer" });
+    for (const annotation of annotations) {
+      // PDF.js supplies validated URLs. Never fall back to its unsafeUrl or execute PDF actions.
+      if (annotation.subtype !== "Link" || (!annotation.url && !annotation.dest)) continue;
+      const [x1, y1, x2, y2] = annotation.rect;
+      if (![x1, y1, x2, y2].every(value => typeof value === "number" && Number.isFinite(value))) continue;
+      const [left, top] = viewport.convertToViewportPoint(x1, y1) as [number, number];
+      const [right, bottom] = viewport.convertToViewportPoint(x2, y2) as [number, number];
+      const link = layer.createEl("a", { attr: {
+        href: annotation.url ?? "#",
+        "aria-label": annotation.overlaidText || annotation.url || "Go to linked passage",
+      } });
+      link.draggable = false;
+      link.setCssProps({
+        left: `${Math.min(left, right) / viewport.width * 100}%`,
+        top: `${Math.min(top, bottom) / viewport.height * 100}%`,
+        width: `${Math.abs(right - left) / viewport.width * 100}%`,
+        height: `${Math.abs(bottom - top) / viewport.height * 100}%`,
+      });
+      if (annotation.url) {
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+      } else {
+        link.dataset.pdfDestination = "true";
+      }
+      // Leave text-selection and highlight popups out of link activation.
+      link.addEventListener("pointerdown", event => {
+        event.stopPropagation();
+        this.dismissPopup();
+      });
+      link.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (annotation.url) {
+          this.contentEl.ownerDocument.defaultView?.open(annotation.url, "_blank", "noopener,noreferrer");
+        } else if (annotation.dest) {
+          void this.resolveDestination(pdf, annotation.dest).then(target => {
+            if (target && pdf === this.pdf) this.goToPage(target.page, target.offset);
+          }).catch(error => console.error("Could not follow PDF link", error));
+        }
+      });
+    }
+  }
+
   private releasePage(slot: PageSlot): void {
     slot.token++;
     slot.busy = false;
@@ -595,6 +653,7 @@ export class ReaderView extends FileView {
     slot.text?.layer.cancel();
     slot.text?.el.remove();
     slot.text = null;
+    slot.el.querySelector(".reader-link-layer")?.remove();
     if (slot.canvas) slot.canvas.width = slot.canvas.height = 0;
     slot.canvas?.remove();
     slot.canvas = null;

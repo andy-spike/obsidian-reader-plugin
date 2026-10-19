@@ -85,7 +85,7 @@ try {
     app.workspace.iterateAllLeaves(leaf => previousLeaves.push(leaf));
     previousLeaves.filter(leaf => /^Reader E2E \\d+\\//.test(leaf.getViewState().state?.file ?? '')).forEach(leaf => leaf.detach());
     await app.vault.createFolder(${JSON.stringify(folder)});
-    const buffer = Buffer.from(${JSON.stringify(samplePdf({ outline: true }).toString("base64"))}, 'base64');
+    const buffer = Buffer.from(${JSON.stringify(samplePdf({ outline: true, links: true }).toString("base64"))}, 'base64');
     const bytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
     await app.vault.createBinary(${JSON.stringify(source)}, bytes);
     await app.vault.createBinary(${JSON.stringify(second)}, bytes);
@@ -99,6 +99,34 @@ try {
     waitFor(`app.workspace.getLeavesOfType("reader-plugin-pdf").some(l => l.view.file?.path === ${JSON.stringify(source)} && l.view.getRecord())`, "PDF was not routed to Reader");
     activate();
     waitFor(`${reader()}.contentEl.querySelectorAll('.reader-page canvas').length === 2 && ${reader()}.contentEl.querySelectorAll('.textLayer').length === 2`, "Expected both PDF pages to render");
+  });
+
+  step("PDF hyperlinks open externally and citations navigate inside the book", () => {
+    const external = '.reader-page a[href="https://example.com/reading-desk-link"]';
+    waitFor(`${reader()}.contentEl.querySelector(${JSON.stringify(external)})`, "PDF hyperlink has no clickable target");
+    evaluate(`
+      window.readerLinkOpened = null;
+      window.readerOriginalOpen = window.open;
+      window.open = (...args) => { window.readerLinkOpened = args; return null; };
+      return true;
+    `);
+    try {
+      click(external);
+      check(`window.readerLinkOpened?.[0] === "https://example.com/reading-desk-link"`, "Clicking a PDF hyperlink did not open its URL");
+      click('[aria-label="Zoom in (+)"]');
+      evaluate(`window.readerLinkOpened = null; ${reader()}.goToPage(1); return true;`);
+      click(external);
+      check(`window.readerLinkOpened?.[0] === "https://example.com/reading-desk-link"`, "PDF hyperlink lost its clickable position after zooming");
+      evaluate(`window.readerLinkOpened = null; ${reader()}.contentEl.querySelector(${JSON.stringify(external)}).focus(); return true;`);
+      press('Enter');
+      check(`window.readerLinkOpened?.[0] === "https://example.com/reading-desk-link"`, "PDF hyperlink did not activate with the keyboard");
+    } finally {
+      click('[aria-label="Reset zoom to fit width (0)"]');
+      evaluate(`window.open = window.readerOriginalOpen; delete window.readerOriginalOpen; delete window.readerLinkOpened; return true;`);
+    }
+    click('.reader-page a[data-pdf-destination]');
+    waitFor(`${reader()}.page === 2`, "Clicking an internal PDF link did not navigate to page 2");
+    evaluate(`${reader()}.goToPage(1); return true;`);
   });
 
   step("bundled decoders render JPEG 2000, CCITT, and JBIG2 images and apply ICC color profiles", () => {
