@@ -2,7 +2,7 @@
 
 This page describes the JSON files Reading Desk writes for each PDF. Readers who only want to know where their data lives should see [Files, sync, and renaming](../docs/files-and-sync.md).
 
-The annotation folder, the hidden `.reader-annotations/` by default, holds one `<document-id>.json` record per PDF. The record is the authority for highlights. Everything the reader writes lives in the book note, whose quote sections carry the block IDs and passage links (`obsidian://reader-plugin?document=…&annotation=…&page=…`). The Reader's protocol handler opens those links while the vault is active.
+The annotation folder, the hidden `.reader-annotations/` by default, holds one `<document-id>.json` record per PDF. The record is the authority for highlights. Everything the reader writes lives in Markdown: comments in quote notes, which carry the highlight ID in their `annotation` property, and other writing in the book note, whose quote sections carry passage links (`obsidian://reader-plugin?document=…&annotation=…&page=…`). The Reader's protocol handler opens those links while the vault is active.
 
 The plugin reads and writes these files directly, because Obsidian does not index hidden folders.
 

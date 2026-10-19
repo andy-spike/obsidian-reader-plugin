@@ -4,18 +4,18 @@ import type { Annotation, AnnotationRecord } from "./annotations";
  * Each highlight has a quote section in its PDF's book note. Reconciliation preserves the reader's writing,
  * except under a deleted highlight, where it goes with the quote unless the reader chose to keep it.
  *
- * The passage link identifies the highlight; the block ID lets other notes link to the section.
+ * The passage link identifies the highlight. Other notes link to a passage through its quote note.
  *
  *     > [!quote] p. 34 · [Open passage](obsidian://reader-plugin?document=…&annotation=…&page=34)
- *     > The quoted passage, as one flowing line.
- *
- *     ^e66da097
+ *     > [[Book notes/Book/The quoted passage|The quoted passage, as one flowing line.]]
  *
  *     The reader's writing, up to the next section or heading.
  *
  *     ---
  *
  * Separators belong to the section below them. A reader's heading replaces the separator.
+ * The quote links to its highlight's quote note (see quote-note.ts), which holds the reader's comment about it.
+ * A quote counts as unedited while its text is unchanged, wherever its link points.
  */
 
 interface SectionInput {
@@ -27,7 +27,10 @@ interface SectionInput {
 
 export interface Section {
   id: string;
-  /** Line indexes. The callout runs from `start` to `calloutEnd` (exclusive); `idLine` is -1 when the block ID was removed. */
+  /**
+   * Line indexes. The callout runs from `start` to `calloutEnd` (exclusive). `idLine` is the block ID line that earlier
+   * versions wrote below the callout, or -1.
+   */
   start: number;
   /** The `---` line above the section, or -1. Only a section that directly follows another one has a separator. */
   separator: number;
@@ -40,15 +43,15 @@ export interface Section {
   writing: string;
 }
 
-const HEADER = /^>\s*\[!quote\][^\n]*?obsidian:\/\/reader-plugin\?[^)\s]*?annotation=([\w-]+)/;
+export const HEADER = /^>\s*\[!quote\][^\n]*?obsidian:\/\/reader-plugin\?[^)\s]*?annotation=([\w-]+)/;
 const HEADING = /^#{1,6}\s/;
 
-/** Shorten block IDs because Obsidian shows them while editing. */
+/** Earlier versions wrote a shortened block ID below each callout. */
 function blockId(annotationId: string): string {
   return annotationId.slice(0, 8);
 }
 
-function passageUri(documentId: string, annotationId: string, page: number): string {
+export function passageUri(documentId: string, annotationId: string, page: number): string {
   return `obsidian://reader-plugin?document=${documentId}&annotation=${annotationId}&page=${page}`;
 }
 
@@ -57,7 +60,7 @@ const SEPARATOR = "---";
 /**
  * Join PDF line breaks, preserving hyphens within words. The same normalization detects user edits to older quotes.
  */
-function quoteText(quote: string): string {
+export function quoteText(quote: string): string {
   const lines = quote.replace(/\r\n?/g, "\n").split("\n").map(line => line.trim()).filter(Boolean);
   let text = "";
   for (const line of lines) {
@@ -68,13 +71,37 @@ function quoteText(quote: string): string {
   return text.replace(/\s+/g, " ");
 }
 
+/**
+ * Links a flowing quote to its highlight's quote note, showing the quote as the link text. Brackets and `|` can't appear
+ * inside a link without changing the visible text, so such a quote stays plain, as does one without a quote note yet.
+ */
+function linkedQuote(flowed: string, target: string | undefined): string {
+  if (!target || /[[\]|]/.test(flowed)) return flowed;
+  return `[[${target}|${flowed}]]`;
+}
+
+/** The quote's text in a section, as one flowing line, linked to its quote note when it has one. */
+function quoteLine(quote: string, target: string | undefined): string {
+  return linkedQuote(quoteText(quote), target);
+}
+
+/** The text a section shows for its quote: a link's visible text, or the plain text. */
+function shownQuote(sectionQuote: string): string {
+  const current = quoteText(sectionQuote);
+  const link = /^\[\[([^[\]|]*)(?:\|([^[\]|]*))?\]\]$/.exec(current);
+  return link ? link[2] ?? link[1]! : current;
+}
+
+/** Whether a section still shows the highlight's quote as the plugin wrote it. Where its link points doesn't matter. */
+function isUneditedQuote(sectionQuote: string, quote: string): boolean {
+  return shownQuote(sectionQuote) === quoteText(quote);
+}
+
 /** The lines of a new section, without the blank lines around it. */
-function sectionLines(input: SectionInput): string[] {
+function sectionLines(input: SectionInput, target: string | undefined): string[] {
   return [
     `> [!quote] p. ${input.page} · [Open passage](${passageUri(input.documentId, input.annotationId, input.page)})`,
-    `> ${quoteText(input.quote)}`,
-    "",
-    `^${blockId(input.annotationId)}`,
+    `> ${quoteLine(input.quote, target)}`,
   ];
 }
 
@@ -130,16 +157,20 @@ function addSeparators(text: string): string {
   return changed ? finish(lines) : text;
 }
 
-/** Rewrites unedited quotes that still keep the PDF's line breaks as one flowing line. `quotes` maps highlight IDs to their quotes. */
-function flowQuotes(text: string, quotes: Map<string, string>): string {
+/**
+ * Rewrites unedited quotes in the current form: one flowing line, linked to the highlight's quote note.
+ * `quotes` maps highlight IDs to their quotes, and `links` to their quote notes.
+ */
+function formatQuotes(text: string, quotes: Map<string, string>, links: Map<string, string>): string {
   const lines = text.split("\n");
   let changed = false;
   for (const section of findSections(text).reverse()) {
     const quote = quotes.get(section.id);
-    if (quote === undefined || section.calloutEnd - section.start === 2) continue;
-    const flowed = quoteText(quote);
-    if (quoteText(section.quote) !== flowed) continue;
-    lines.splice(section.start + 1, section.calloutEnd - section.start - 1, `> ${flowed}`);
+    if (quote === undefined || !isUneditedQuote(section.quote, quote)) continue;
+    const line = `> ${quoteLine(quote, links.get(section.id))}`;
+    const isSingleLine = section.calloutEnd - section.start === 2;
+    if (isSingleLine && lines[section.start + 1] === line) continue;
+    lines.splice(section.start + 1, section.calloutEnd - section.start - 1, line);
     changed = true;
   }
   return changed ? finish(lines) : text;
@@ -160,7 +191,7 @@ function finish(lines: string[]): string {
  * Adds a section before `before`, or at the end when it is null. Headings directly above `before` stay with it,
  * so a passage from an earlier chapter lands above that chapter's heading.
  */
-function insertSection(text: string, input: SectionInput, before: Section | null): string {
+function insertSection(text: string, input: SectionInput, before: Section | null, target: string | undefined): string {
   const lines = text.split("\n");
   let at = lines.length;
   if (before) {
@@ -171,8 +202,9 @@ function insertSection(text: string, input: SectionInput, before: Section | null
   } else {
     while (at > 0 && !lines[at - 1]!.trim()) at--;
   }
-  lines.splice(at, 0, ...sectionLines(input));
-  const end = at + sectionLines(input).length;
+  const added = sectionLines(input, target);
+  lines.splice(at, 0, ...added);
+  const end = at + added.length;
   joinAt(lines, end);
   joinAt(lines, at);
   return addSeparators(finish(lines));
@@ -201,6 +233,17 @@ function appendWriting(text: string, section: Section, writing: string): string 
   joinAt(lines, at + added.length);
   joinAt(lines, at);
   return finish(lines);
+}
+
+/** Removes the block IDs that earlier versions wrote below each callout. Quote notes are the link target now. */
+function dropBlockIds(text: string): string {
+  const lines = text.split("\n");
+  const sections = findSections(text).filter(section => section.idLine >= 0).reverse();
+  for (const section of sections) {
+    lines.splice(section.idLine, 1);
+    joinAt(lines, section.idLine);
+  }
+  return sections.length ? finish(lines) : text;
 }
 
 /** Removes the `· [[book.pdf#page=N|PDF]]` link that earlier sections had after **Open passage**. Only section first lines change. */
@@ -253,7 +296,11 @@ const comments = (record: AnnotationRecord): MovedComment[] => [...record.annota
 export interface ReconcileOptions {
   /** Keep the section of a deleted highlight when the reader wrote under it, instead of removing the writing with the quote. */
   keepWritingOfDeleted: boolean;
+  /** Link paths of quote notes by highlight ID. A quote without one is written as plain text. */
+  quoteLinks: Map<string, string>;
 }
+
+const DEFAULT_RECONCILE_OPTIONS: ReconcileOptions = { keepWritingOfDeleted: false, quoteLinks: new Map() };
 
 /** Owns the complete text policy. Only quotes confirmed after a successful vault write may later be removed. */
 export class BookNoteReconciler {
@@ -261,16 +308,17 @@ export class BookNoteReconciler {
   /** Writing removed with deleted highlights, by document ID and then annotation ID, so undoing a delete brings it back. */
   private removedWritings = new Map<string, Map<string, string>>();
 
-  reconcile(text: string, record: AnnotationRecord, options: ReconcileOptions = { keepWritingOfDeleted: false }): string {
-    text = dropPdfLinks(text);
+  reconcile(text: string, record: AnnotationRecord, options: ReconcileOptions = DEFAULT_RECONCILE_OPTIONS): string {
+    text = dropBlockIds(dropPdfLinks(text));
     const quotes = new Map(record.annotations.map(annotation => [annotation.id, annotation.quote.exact]));
-    text = flowQuotes(text, quotes);
+    text = formatQuotes(text, quotes, options.quoteLinks);
     text = addSeparators(text);
     const ids = new Set(record.annotations.map(annotation => annotation.id));
     const known = this.quotes.get(record.documentId);
     for (const section of findSections(text).reverse()) {
       if (ids.has(section.id) || (section.writing && options.keepWritingOfDeleted)) continue;
-      if (known?.get(section.id) !== quoteText(section.quote)) continue;
+      const knownQuote = known?.get(section.id);
+      if (knownQuote === undefined || !isUneditedQuote(section.quote, knownQuote)) continue;
       if (section.writing) {
         const removed = this.removedWritings.get(record.documentId) ?? new Map<string, string>();
         removed.set(section.id, section.writing);
@@ -286,7 +334,7 @@ export class BookNoteReconciler {
         const other = record.annotations.find(candidate => candidate.id === section.id);
         return other && byPosition(annotation, other) < 0;
       }) ?? null;
-      text = insertSection(text, { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact }, later);
+      text = insertSection(text, { documentId: record.documentId, annotationId: annotation.id, page: annotation.page, quote: annotation.quote.exact }, later, options.quoteLinks.get(annotation.id));
       const removedWriting = this.removedWritings.get(record.documentId)?.get(annotation.id);
       const inserted = findSections(text).find(section => section.id === annotation.id);
       if (removedWriting && inserted) text = appendWriting(text, inserted, removedWriting);

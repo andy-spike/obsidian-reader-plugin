@@ -6,7 +6,7 @@ Open **Settings → Reading Desk**.
 
 **Show the book note with PDFs.** When on, opening a PDF in Reader also opens its book note. When off, open the note with the book note button, the **A** key, or **Toggle book note**.
 
-**Open book notes.** Where the book note opens, either **In the right sidebar** or **Beside the PDF**. This applies to the book note button, the **A** and **N** keys, and **Note**. Right-click the book note button to open the note in the other place once.
+**Open book notes.** Where the book note opens, either **In the right sidebar**, as a card for each highlight with its comment, or **Beside the PDF**, as the Markdown note. This applies to the book note button, the **A** and **N** keys, and **Note**. Right-click the book note button to open the note in the other place once.
 
 **PDF page colors.** How Reader colors PDF pages:
 
@@ -30,6 +30,10 @@ Renaming or recoloring a color updates the highlights that use it. Highlights in
 ## Book notes folder
 
 Where new book notes are created. The default is `Book notes/`. Notes that already exist stay where they are.
+
+## Keep writing of deleted highlights
+
+When you delete a highlight, its quote note goes to the trash and its quote leaves the book note, along with what you wrote about it. **Undo** brings everything back. Turn this on to keep a quote note that has a comment, and a book-note quote with writing under it.
 
 ## Book note template
 

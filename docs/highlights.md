@@ -6,7 +6,7 @@ Select text with the mouse. A popup appears next to the selection.
 
 - Click a color swatch to highlight the passage in that color. Hover over a swatch, or focus it with the keyboard, to preview the color on your selection.
 - Press a number key, 1 to 9, to pick the swatch in that position.
-- Click **Note** to highlight in the color you used last and open the book note at the new section. See [Book notes](book-notes.md).
+- Click **Note** to highlight in the color you used last and start writing about the passage in its card. See [Book notes](book-notes.md).
 - Click the copy button to copy the passage text to the clipboard.
 
 A selection that runs across a page break becomes one highlight per page. A keyboard selection (Shift with the arrow keys) shows the same popup at the end of the selection.
@@ -20,11 +20,11 @@ Highlights save as you make them. There is no save button.
 Click a highlight to open its popup.
 
 - Click a swatch to change its color. The quote's color strip in the book note updates at once.
-- Click the note button to open the book note at the end of what you wrote under that passage.
+- Click the note button to write about the passage in its card.
 - Click the copy button to copy the passage text.
 - Click the delete button, or press Delete or Backspace, to remove the highlight. A notice offers **Undo**.
 
-Hovering over a highlight darkens it. A small dot on a highlight means you've written something under it in the book note.
+Hovering over a highlight darkens it. A small dot on a highlight means you've written something about it, in its quote note or under it in the book note.
 
 ## Highlight mode
 

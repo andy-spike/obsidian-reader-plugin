@@ -36,7 +36,8 @@ function fixture() {
   const app = { vault, fileManager: { trashFile: async file => { calls.push("retire export"); files.delete(file.path); } } };
   const store = { folder: ".reader-annotations", save: async record => { calls.push("save record"); assert.equal(record.annotations[0].comment, ""); } };
   const record = { documentId: "doc-1", sourcePath: "Book.pdf", notePath: file.path, annotations: [{ id: "a1", page: 1, position: { start: 0 }, quote: { exact: "A quote" }, comment: "An old comment" }] };
-  const notes = new BookNotes(app, store, () => ({}));
+  const quotes = { sync: async () => new Map(), load: async () => {}, folderOf: () => null, comment: () => "", find: () => null };
+  const notes = new BookNotes(app, store, quotes, () => ({}));
   return { notes, record, vault, store, calls, text: () => text, oldExport, files };
 }
 

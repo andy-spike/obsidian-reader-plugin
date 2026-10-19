@@ -19,7 +19,7 @@ export interface ReaderSettings {
   /** Show the PDF's book note in the sidebar whenever a PDF opens in Reader. */
   showAnnotationsOnOpen: boolean;
   notePlace: NotePlace;
-  /** When a highlight is deleted, keep its quote in the book note if something is written under it. Off removes both. */
+  /** When a highlight is deleted, keep its quote note if it has a comment, and its book-note quote if something is written under it. */
   keepWritingOfDeletedHighlights: boolean;
   /** How PDF pages are colored, unless a PDF has its own choice. */
   pageColors: PageColors;
@@ -190,7 +190,7 @@ export class ReaderSettingTab extends PluginSettingTab {
         },
         {
           name: "Keep writing of deleted highlights",
-          desc: "When you delete a highlight, its quote is removed from the book note along with anything you wrote under it. Turn on to keep the quote and your writing when you wrote something.",
+          desc: "When you delete a highlight, its quote note goes to the trash and its quote is removed from the book note, along with anything you wrote about it. Turn on to keep a quote note that has a comment, and a quote with writing under it in the book note.",
           render: row => { row.addToggle(toggle => toggle.setValue(settings.keepWritingOfDeletedHighlights).onChange(async value => {
             settings.keepWritingOfDeletedHighlights = value;
             await this.host.saveSettings();

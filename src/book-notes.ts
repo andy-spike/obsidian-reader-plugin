@@ -1,7 +1,9 @@
 import { App, MarkdownView, normalizePath, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type { AnnotationRecord, AnnotationStore } from "./annotations";
 import { BookNoteReconciler, ReconcileOptions, defaultNoteHeader, fillTemplate, findSections, noteFileName } from "./book-note";
+import type { QuoteNotes } from "./quote-notes";
 import type { ReaderSettings } from "./settings";
+import type { AnnotationsView } from "./annotations-view";
 
 function localDate(): string {
   const now = new Date();
@@ -24,7 +26,7 @@ export class BookNotes {
   private listeners = new Set<(documentId: string) => void>();
   private reconciler = new BookNoteReconciler();
 
-  constructor(private app: App, private store: AnnotationStore, private settings: () => ReaderSettings) {}
+  constructor(private app: App, private store: AnnotationStore, private quotes: QuoteNotes, private settings: () => ReaderSettings) {}
 
   /** Recognizes note paths already loaded by this window. */
   isNote(path: unknown): boolean {
@@ -41,15 +43,22 @@ export class BookNotes {
     return file instanceof TFile ? file : null;
   }
 
-  /** What the reader wrote under a passage in the book note, or an empty string. */
+  /** What the reader wrote about a passage, in its quote note or under it in the book note, or an empty string. */
   writing(record: AnnotationRecord, annotationId: string): string {
-    return this.writings.get(record.documentId)?.get(annotationId) ?? "";
+    return this.quotes.comment(annotationId) || (this.writings.get(record.documentId)?.get(annotationId) ?? "");
   }
 
   /** Read writing previews without creating or changing a note. */
   async load(record: AnnotationRecord): Promise<void> {
     const file = this.file(record);
     if (file) this.read(record.documentId, file.path, await this.app.vault.cachedRead(file));
+    await this.quotes.load(record);
+  }
+
+  /** Replaces the comment in a passage's quote note, creating the note first if the highlight is brand new. */
+  async comment(record: AnnotationRecord, annotationId: string, comment: string): Promise<void> {
+    if (!this.quotes.find(annotationId)) await this.sync(record);
+    await this.quotes.write(annotationId, comment);
   }
 
   /** Refresh previews after a vault edit. */
@@ -109,8 +118,8 @@ export class BookNotes {
     this.listeners.clear();
   }
 
-  private reconcileOptions(): ReconcileOptions {
-    return { keepWritingOfDeleted: this.settings().keepWritingOfDeletedHighlights };
+  private reconcileOptions(quoteLinks: Map<string, string>): ReconcileOptions {
+    return { keepWritingOfDeleted: this.settings().keepWritingOfDeletedHighlights, quoteLinks };
   }
 
   /** Create or reconcile a note, one update at a time per PDF. */
@@ -123,8 +132,17 @@ export class BookNotes {
 
   private async update(record: AnnotationRecord): Promise<TFile | null> {
     let file = this.file(record);
-    if (file) await this.app.vault.process(file, text => this.reconciler.reconcile(text, record, this.reconcileOptions()));
-    else if (record.annotations.length) file = await this.create(record);
+    // A note left from before, such as one whose record was lost, is used again if it is about the same PDF.
+    const place = file ?? (record.annotations.length ? await this.place(record) : null);
+    if (place instanceof TFile) file = place;
+    const notePath = place instanceof TFile ? place.path : place;
+    // Quote notes come first, so the book note's quotes can link to them.
+    const quoteLinks = notePath ? await this.quotes.sync(record, {
+      folder: this.quotes.folderOf(record.documentId) ?? notePath.replace(/\.md$/, ""),
+      source: this.sourceLink(record, notePath),
+    }, this.settings().keepWritingOfDeletedHighlights) : new Map<string, string>();
+    if (file) await this.app.vault.process(file, text => this.reconciler.reconcile(text, record, this.reconcileOptions(quoteLinks)));
+    else if (notePath) file = await this.create(record, notePath, quoteLinks);
     let changed = false;
     if (file) {
       const text = await this.app.vault.read(file);
@@ -160,24 +178,38 @@ export class BookNotes {
     await this.app.fileManager.trashFile(old);
   }
 
-  private async create(record: AnnotationRecord): Promise<TFile> {
+  private title(record: AnnotationRecord): string {
     const pdf = this.app.vault.getAbstractFileByPath(record.sourcePath);
-    const title = pdf instanceof TFile ? pdf.basename : record.sourcePath.split("/").pop()!.replace(/\.pdf$/i, "");
+    return pdf instanceof TFile ? pdf.basename : record.sourcePath.split("/").pop()!.replace(/\.pdf$/i, "");
+  }
+
+  /** A link to the PDF from a note at `fromPath`. */
+  private sourceLink(record: AnnotationRecord, fromPath: string): string {
+    const pdf = this.app.vault.getAbstractFileByPath(record.sourcePath);
+    return pdf instanceof TFile ? `[[${this.app.metadataCache.fileToLinktext(pdf, fromPath, false)}]]` : `[[${record.sourcePath}]]`;
+  }
+
+  /** The path for a PDF's new book note, or an existing note about the same PDF at one of those paths. */
+  private async place(record: AnnotationRecord): Promise<TFile | string> {
+    const name = noteFileName(this.title(record));
     const folder = this.settings().notesFolder;
-    if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder).catch(() => {});
-    const name = noteFileName(title);
     let path = normalizePath(`${folder}/${name}.md`);
     for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
-      // A note left from before, such as one whose record was lost, is used again if it is about the same PDF.
       const existing = this.app.vault.getAbstractFileByPath(path);
-      if (existing instanceof TFile && await this.isNoteFor(existing, record)) return this.adopt(existing, record);
+      if (existing instanceof TFile && await this.isNoteFor(existing, record)) return existing;
       path = normalizePath(`${folder}/${name} (${n}).md`);
     }
-    const source = pdf instanceof TFile ? `[[${this.app.metadataCache.fileToLinktext(pdf, path, false)}]]` : `[[${record.sourcePath}]]`;
+    return path;
+  }
+
+  private async create(record: AnnotationRecord, path: string, quoteLinks: Map<string, string>): Promise<TFile> {
+    const folder = this.settings().notesFolder;
+    if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder).catch(() => {});
+    const source = this.sourceLink(record, path);
     let header = defaultNoteHeader(source);
     const template = this.settings().noteTemplate ? this.app.vault.getAbstractFileByPath(this.settings().noteTemplate) : null;
-    if (template instanceof TFile) header = fillTemplate(await this.app.vault.read(template), { title, source, date: localDate() });
-    const file = await this.app.vault.create(path, this.reconciler.reconcile(header.endsWith("\n") ? header : header + "\n", record, this.reconcileOptions()));
+    if (template instanceof TFile) header = fillTemplate(await this.app.vault.read(template), { title: this.title(record), source, date: localDate() });
+    const file = await this.app.vault.create(path, this.reconciler.reconcile(header.endsWith("\n") ? header : header + "\n", record, this.reconcileOptions(quoteLinks)));
     if (template instanceof TFile) {
       await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => { frontmatter.source ??= source; });
     }
@@ -188,12 +220,7 @@ export class BookNotes {
     return (await this.app.vault.cachedRead(file)).includes(`document=${record.documentId}&`);
   }
 
-  private async adopt(file: TFile, record: AnnotationRecord): Promise<TFile> {
-    await this.app.vault.process(file, text => this.reconciler.reconcile(text, record, this.reconcileOptions()));
-    return file;
-  }
-
-  /** Open the note in the supplied tab, with the cursor ready to write under the requested passage. */
+  /** Open the note in the supplied tab, ready to write about the requested passage: in its card, or under it in the note. */
   async open(record: AnnotationRecord, annotationId: string | null, show: (file: TFile) => Promise<WorkspaceLeaf | null>): Promise<void> {
     const file = await this.sync(record);
     if (!file) return;
@@ -202,6 +229,9 @@ export class BookNotes {
     await this.app.workspace.revealLeaf(target);
     this.app.workspace.setActiveLeaf(target, { focus: true });
     if (annotationId && target.view instanceof MarkdownView) this.placeCursor(target.view, annotationId);
+    // The sidebar's cards; checked by method so this module doesn't load the view and its interface.
+    const cards = target.view as Partial<Pick<AnnotationsView, "focusComment">>;
+    if (annotationId && typeof cards.focusComment === "function") cards.focusComment(annotationId);
   }
 
   private placeCursor(view: MarkdownView, annotationId: string): void {
@@ -213,7 +243,7 @@ export class BookNotes {
       line = section.writingEnd - 1;
       while (line > section.writingStart && !editor.getLine(line).trim()) line--;
     } else {
-      // A blank line after the block ID, one to type on, and one before whatever follows.
+      // A blank line after the quote, one to type on, and one before whatever follows.
       const anchor = (section.idLine >= 0 ? section.idLine : section.calloutEnd - 1) + 1;
       const atEnd = section.writingEnd >= editor.lineCount();
       const needed = atEnd ? 2 : 3;

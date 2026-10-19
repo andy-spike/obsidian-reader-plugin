@@ -7,7 +7,7 @@ These single keys work while a Reader tab is active. They pause while you type i
 | Key | What it does |
 | --- | --- |
 | H | Toggle highlight mode |
-| N | Highlight the selection and open its section in the book note. If a highlight's popup is open, open that highlight's section. Otherwise open the book note. |
+| N | Highlight the selection and start writing about it. If a highlight's popup is open, write about that highlight. Otherwise open the book note. |
 | A | Toggle the book note |
 | T | Open the table of contents |
 | G | Focus the page number field |

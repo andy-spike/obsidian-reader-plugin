@@ -4,7 +4,7 @@
 
 Reading Desk keeps three kinds of data in your vault.
 
-- **Book notes** are ordinary Markdown files in your book notes folder. Everything you write is here.
+- **Book notes and quote notes** are ordinary Markdown files in your book notes folder. Everything you write is here.
 - **Highlight records** are one JSON file per PDF in the annotation folder, `.reader-annotations/` by default. They hold each highlight's page, position, and color.
 - **Reading positions and settings** are in the plugin's own `data.json` file, in `.obsidian/plugins/reading-desk/`.
 
