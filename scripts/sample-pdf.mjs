@@ -1,5 +1,5 @@
 // Original, deterministic two-page text PDF for the disposable development vault.
-export function samplePdf({ outline = false } = {}) {
+export function samplePdf({ outline = false, links = false } = {}) {
   const pages = [
     ["Sample reading book", "Chapter 1: Questions in the margin", "A reader pauses at a passage and writes a question.", "The question connects an argument to the reader's life.", "Select this passage, highlight it, and add a comment."],
     ["Chapter 2: Returning to the evidence", "Good notes preserve the passage and its location.", "A citation should bring the reader back to the evidence.", "Annotations help us revisit an idea with fresh questions."],
@@ -15,6 +15,14 @@ export function samplePdf({ outline = false } = {}) {
       "<< /Type /Outlines /First 9 0 R /Last 10 0 R /Count 2 >>",
       "<< /Title (Questions in the margin) /Parent 8 0 R /Next 10 0 R /Dest [4 0 R /Fit] >>",
       "<< /Title (Returning to the evidence) /Parent 8 0 R /Prev 9 0 R /Dest [6 0 R /Fit] >>",
+    );
+  }
+  if (links) {
+    const firstLink = objects.length + 1;
+    objects[3] = objects[3].replace("/Contents", `/Annots [${firstLink} 0 R ${firstLink + 1} 0 R] /Contents`);
+    objects.push(
+      "<< /Type /Annot /Subtype /Link /Rect [60 724 240 748] /Border [0 0 0] /A << /S /URI /URI (https://example.com/reading-desk-link) >> >>",
+      "<< /Type /Annot /Subtype /Link /Rect [60 684 340 700] /Border [0 0 0] /Dest [6 0 R /Fit] >>",
     );
   }
   let pdf = "%PDF-1.4\n";

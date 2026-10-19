@@ -170,3 +170,9 @@ button.reader-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgb(0 0 
 }
 
 .reader-color-setting { transform: translateY(var(--reader-row-offset, 0px)); }
+
+/* PDF link hit areas scale with the page without covering unrelated selectable text. */
+.reader-link-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.reader-link-layer a { position: absolute; display: block; pointer-events: auto; cursor: pointer; }
+.reader-link-layer a:hover { background: color-mix(in srgb, var(--interactive-accent) 15%, transparent); }
+.reader-link-layer a:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 1px; }
