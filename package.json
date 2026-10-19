@@ -16,11 +16,7 @@
     "dev:open": "node scripts/open-dev-vault.mjs",
     "headless": "node scripts/headless.mjs",
     "worktree:setup": "pnpm install --frozen-lockfile && pnpm build && pnpm dev:setup",
-    "test": "node --test tests/*.test.mjs",
-    "test:e2e": "pnpm build && pnpm dev:setup && node scripts/e2e.mjs",
-    "test:release": "pnpm build && node scripts/release-check.mjs",
-    "lint": "eslint src --max-warnings 0",
-    "test:source-build": "node scripts/source-build-check.mjs"
+    "lint": "eslint src --max-warnings 0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

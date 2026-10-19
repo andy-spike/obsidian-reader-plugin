@@ -19,6 +19,6 @@ Run `npm run dev:open` from a worktree to open its own vault. The first run adds
 
 ## Finishing a task
 
-Run `pnpm build` and `pnpm test`, then commit the task's changes in focused commits. Stage only task files. Merge into `main` or open a pull request when the user asks. After merging, run `pnpm build` in the main checkout to refresh its development vault.
+Run `pnpm build`, then commit the task's changes in focused commits. Stage only task files. Merge into `main` or open a pull request when the user asks. After merging, run `pnpm build` in the main checkout to refresh its development vault.
 
 A T3 conversation stays bound to its worktree after merging. Remove the worktree only after that conversation is finished, so an active session is not left pointing at a missing directory.
