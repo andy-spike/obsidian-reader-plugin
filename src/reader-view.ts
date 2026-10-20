@@ -1091,7 +1091,7 @@ export class ReaderView extends FileView {
     const generalName = PAGE_COLOR_CHOICES.find(choice => choice.value === general)!.name;
     const menu = checkMenu();
     const choose = (choice: PageColors | undefined) => { if (this.file) this.host.choosePageColors(this.file.path, choice); };
-    menu.addItem(item => item.setTitle(`Use the general setting: ${generalName}`).setChecked(!own).onClick(() => choose(undefined)));
+    menu.addItem(item => item.setTitle(`Default (${generalName})`).setChecked(!own).onClick(() => choose(undefined)));
     menu.addSeparator();
     for (const choice of PAGE_COLOR_CHOICES) menu.addItem(item => item.setTitle(choice.name).setChecked(own === choice.value).onClick(() => choose(choice.value)));
     return menu;

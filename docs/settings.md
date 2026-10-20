@@ -10,9 +10,9 @@ Open **Settings → Reading Desk**.
 
 **PDF page colors.** How Reader colors PDF pages:
 
-- **Always original colors** shows each PDF as it is, usually dark text on white paper.
-- **Follow Obsidian's color scheme** shows dark pages while Obsidian uses a dark theme, and original colors in a light theme. Open PDFs change as soon as you switch themes. This is the default.
-- **Always dark pages** shows dark pages in every theme.
+- **Original colors** shows each PDF as it is, usually dark text on white paper.
+- **Match Obsidian theme** shows dark pages while Obsidian uses a dark theme, and original colors in a light theme. Open PDFs change as soon as you switch themes. This is the default.
+- **Dark pages** shows dark pages in every theme.
 
 Each PDF can have its own choice. See [Page colors](reading-pdfs.md#page-colors).
 
