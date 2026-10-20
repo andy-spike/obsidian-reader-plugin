@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { errorMessage } from "./errors";
+import { isSameOrInside } from "./paths";
 
 /** A hidden folder: Obsidian leaves it out of the file list, search, and graph. Sync tools that copy hidden files still carry it. */
 export const ANNOTATION_FOLDER = ".reader-annotations";
@@ -37,21 +39,44 @@ export interface Storage {
 export function fingerprint(data: ArrayBuffer): string {
   return createHash("sha256").update(new Uint8Array(data)).digest("hex");
 }
+/** IDs become file names and link parameters, so they are limited to letters, digits, `_`, and `-`. */
+const isSafeId = (value: unknown): value is string => typeof value === "string" && /^[\w-]+$/.test(value);
+
+function isValidRecordHeader(r: AnnotationRecord): boolean {
+  return r.version === 1
+    && isSafeId(r.documentId)
+    && typeof r.sourcePath === "string"
+    && /^[a-f0-9]{64}$/.test(r.fingerprint)
+    && Array.isArray(r.annotations)
+    && (r.notePath === undefined || typeof r.notePath === "string")
+    && (r.exportRetired === undefined || typeof r.exportRetired === "boolean");
+}
+
+/** Rects are fractions of the page, with a little tolerance for rounding at the far edges. */
+function isValidRect(rect: Rect): boolean {
+  return [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)
+    && rect.x >= 0 && rect.y >= 0 && rect.width > 0 && rect.height > 0
+    && rect.x + rect.width <= 1.001 && rect.y + rect.height <= 1.001;
+}
+
+function isValidAnnotation(a: Annotation): boolean {
+  return isSafeId(a.id)
+    && Number.isInteger(a.page) && a.page >= 1
+    && isSafeId(a.color)
+    && typeof a.comment === "string"
+    && typeof a.createdAt === "string"
+    && typeof a.quote?.exact === "string" && typeof a.quote.prefix === "string" && typeof a.quote.suffix === "string"
+    && Number.isInteger(a.position?.start) && Number.isInteger(a.position.end)
+    && a.position.start >= 0 && a.position.end > a.position.start
+    && Array.isArray(a.rects) && a.rects.length > 0 && a.rects.every(isValidRect);
+}
+
 export function parseRecord(text: string): AnnotationRecord {
   const r = JSON.parse(text) as AnnotationRecord;
-  if (r.version !== 1 || typeof r.documentId !== "string" || !/^[\w-]+$/.test(r.documentId) || typeof r.sourcePath !== "string" ||
-      !/^[a-f0-9]{64}$/.test(r.fingerprint) || !Array.isArray(r.annotations) || (r.notePath !== undefined && typeof r.notePath !== "string") ||
-      (r.exportRetired !== undefined && typeof r.exportRetired !== "boolean")) throw new Error("Unsupported annotation record.");
+  if (!isValidRecordHeader(r)) throw new Error("Unsupported annotation record.");
   const ids = new Set<string>();
   for (const a of r.annotations) {
-    if (typeof a.id !== "string" || !/^[\w-]+$/.test(a.id) || ids.has(a.id) || !Number.isInteger(a.page) || a.page < 1 ||
-        typeof a.color !== "string" || !/^[\w-]+$/.test(a.color) || typeof a.comment !== "string" || typeof a.createdAt !== "string" ||
-        typeof a.quote?.exact !== "string" || typeof a.quote.prefix !== "string" || typeof a.quote.suffix !== "string" ||
-        !Number.isInteger(a.position?.start) || !Number.isInteger(a.position.end) || a.position.start < 0 || a.position.end <= a.position.start ||
-        !Array.isArray(a.rects) || !a.rects.length || a.rects.some(rect =>
-          ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.x < 0 || rect.y < 0 || rect.width <= 0 || rect.height <= 0 || rect.x + rect.width > 1.001 || rect.y + rect.height > 1.001)) {
-      throw new Error("Invalid annotation record. The original file has been preserved.");
-    }
+    if (!isValidAnnotation(a) || ids.has(a.id)) throw new Error("Invalid annotation record. The original file has been preserved.");
     ids.add(a.id);
   }
   return r;
@@ -155,7 +180,7 @@ export class AnnotationStore {
         }
       } catch (error) {
         if (this.revisions.get(id) === revision) {
-          this.states.set(id, { saving: false, error: error instanceof Error ? error.message : String(error) });
+          this.states.set(id, { saving: false, error: errorMessage(error) });
           this.notify(record);
           if (!this.closed) this.retries.set(id, window.setTimeout(() => {
             this.retries.delete(id);
@@ -176,7 +201,7 @@ export class AnnotationStore {
       for (const path of (await this.storage.list(this.folder)).files.filter(path => path.endsWith(".json"))) {
         const loaded = parseRecord(await this.storage.read(path));
         const record = this.records.get(loaded.documentId) ?? loaded;
-        const moves = (path: string | undefined) => !!path && (path === oldPath || path.startsWith(oldPath + "/"));
+        const moves = (path: string | undefined) => !!path && isSameOrInside(path, oldPath);
         if (moves(record.sourcePath) || moves(record.notePath)) {
           if (moves(record.sourcePath)) record.sourcePath = newPath + record.sourcePath.slice(oldPath.length);
           if (moves(record.notePath)) record.notePath = newPath + record.notePath!.slice(oldPath.length);
@@ -192,7 +217,7 @@ export class AnnotationStore {
 
   async find(id: string): Promise<AnnotationRecord | null> {
     const path = `${this.folder}/${id}.json`;
-    if (!/^[\w-]+$/.test(id) || !await this.storage.exists(path)) return null;
+    if (!isSafeId(id) || !await this.storage.exists(path)) return null;
     return parseRecord(await this.storage.read(path));
   }
 }
