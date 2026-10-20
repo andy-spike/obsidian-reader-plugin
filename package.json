@@ -16,6 +16,7 @@
     "dev:open": "node scripts/open-dev-vault.mjs",
     "headless": "node scripts/headless.mjs",
     "worktree:setup": "pnpm install --frozen-lockfile && pnpm build && pnpm dev:setup",
+    "worktree:start": "pnpm worktree:setup && pnpm dev:open",
     "lint": "eslint src --max-warnings 0"
   },
   "devDependencies": {
