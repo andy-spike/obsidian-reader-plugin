@@ -90,6 +90,16 @@ export interface ReaderHost {
   choosePageColors(path: string, choice: PageColors | undefined): void;
 }
 
+/** Single-key shortcuts stand aside while the reader types in a field, such as the page number. */
+const isTypingIn = (target: EventTarget | null): boolean =>
+  !!(target as HTMLElement | null)?.closest?.("input, textarea, [contenteditable='true']");
+
+/** Zeroing a canvas frees its pixel memory now rather than when it is garbage collected. */
+function releaseCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = canvas.height = 0;
+  canvas.remove();
+}
+
 const titleOf = (path: unknown): string => typeof path === "string" ? pdfTitle(path) : "";
 
 export class ReaderView extends FileView {
@@ -439,8 +449,10 @@ export class ReaderView extends FileView {
     if (!restore || !this.slots.length || !this.stage.clientHeight) return;
     this.restore = null;
     const zoom = restore.zoom;
-    if (zoom === "page" || zoom === "width" || zoom === "fit") this.setZoom(this.fitZoom(zoom === "page" ? "page" : "width"), zoom === "page" ? "page" : "width", undefined, false);
-    else if (typeof zoom === "number") this.setZoom(zoom, null, undefined, false);
+    if (zoom === "page" || zoom === "width" || zoom === "fit") {
+      const fit = zoom === "page" ? "page" : "width";
+      this.setZoom(this.fitZoom(fit), fit, undefined, false);
+    } else if (typeof zoom === "number") this.setZoom(zoom, null, undefined, false);
     else this.setZoom(this.fit ? this.fitZoom(this.fit) : this.zoom, this.fit, undefined, false);
     if (restore.page !== undefined) {
       this.goToPage(restore.page, restore.offset ?? 0);
@@ -561,7 +573,9 @@ export class ReaderView extends FileView {
 
   zoomBy(direction: 1 | -1): void {
     const current = Math.round(this.zoom * 100) / 100;
-    const target = direction > 0 ? ZOOM_STEPS.find(step => step > current + 0.001) ?? MAX_ZOOM : [...ZOOM_STEPS].reverse().find(step => step < current - 0.001) ?? MIN_ZOOM;
+    const target = direction > 0
+      ? ZOOM_STEPS.find(step => step > current + 0.001) ?? MAX_ZOOM
+      : [...ZOOM_STEPS].reverse().find(step => step < current - 0.001) ?? MIN_ZOOM;
     this.setZoom(target, null);
   }
 
@@ -655,9 +669,8 @@ export class ReaderView extends FileView {
       slot.task = page.render({ canvas, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0] });
       await slot.task.promise;
       slot.task = null;
-      if (stale()) { canvas.width = canvas.height = 0; return; }
-      if (slot.canvas) slot.canvas.width = slot.canvas.height = 0;
-      slot.canvas?.remove();
+      if (stale()) { releaseCanvas(canvas); return; }
+      if (slot.canvas) releaseCanvas(slot.canvas);
       slot.el.prepend(canvas);
       slot.canvas = canvas;
       slot.renderedZoom = zoom;
@@ -702,13 +715,18 @@ export class ReaderView extends FileView {
       if (![x1, y1, x2, y2].every(value => typeof value === "number" && Number.isFinite(value))) continue;
       const [left, top] = viewport.convertToViewportPoint(x1, y1) as [number, number];
       const [right, bottom] = viewport.convertToViewportPoint(x2, y2) as [number, number];
-      const leftPercent = Math.min(left, right) / viewport.width * 100;
-      const topPercent = Math.min(top, bottom) / viewport.height * 100;
+      // Percentages of the page, so the boxes follow zoom without being redrawn.
+      const box = {
+        left: Math.min(left, right) / viewport.width * 100,
+        top: Math.min(top, bottom) / viewport.height * 100,
+        width: Math.abs(right - left) / viewport.width * 100,
+        height: Math.abs(bottom - top) / viewport.height * 100,
+      };
       if (annotation.subtype === "Widget") {
         this.compatibility.showForms(true);
-        forms.push({ id: annotation.id, left: leftPercent, top: topPercent, width: Math.abs(right - left) / viewport.width * 100, height: Math.abs(bottom - top) / viewport.height * 100 });
+        forms.push({ id: annotation.id, ...box });
       } else if (annotation.subtype !== "Popup" && annotation.subtype !== "Link" && annotation.contentsObj?.str.trim()) {
-        comments.push({ id: annotation.id, left: Math.max(0, Math.min(96, leftPercent)), top: Math.max(0, Math.min(96, topPercent)), text: annotation.contentsObj.str, author: annotation.titleObj?.str ?? "" });
+        comments.push({ id: annotation.id, left: Math.max(0, Math.min(96, box.left)), top: Math.max(0, Math.min(96, box.top)), text: annotation.contentsObj.str, author: annotation.titleObj?.str ?? "" });
       }
       // PDF.js supplies validated URLs. Never fall back to its unsafeUrl or execute PDF actions.
       if (annotation.subtype !== "Link" || (!annotation.url && !annotation.dest)) continue;
@@ -717,12 +735,7 @@ export class ReaderView extends FileView {
         "aria-label": annotation.overlaidText || annotation.url || "Go to linked passage",
       } });
       link.draggable = false;
-      link.setCssProps({
-        left: `${Math.min(left, right) / viewport.width * 100}%`,
-        top: `${Math.min(top, bottom) / viewport.height * 100}%`,
-        width: `${Math.abs(right - left) / viewport.width * 100}%`,
-        height: `${Math.abs(bottom - top) / viewport.height * 100}%`,
-      });
+      link.setCssProps({ left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%` });
       if (annotation.url) {
         link.target = "_blank";
         link.rel = "noopener noreferrer";
@@ -774,8 +787,7 @@ export class ReaderView extends FileView {
     slot.text?.el.remove();
     slot.text = null;
     slot.el.querySelector(".reader-link-layer")?.remove();
-    if (slot.canvas) slot.canvas.width = slot.canvas.height = 0;
-    slot.canvas?.remove();
+    if (slot.canvas) releaseCanvas(slot.canvas);
     slot.canvas = null;
     slot.renderedZoom = 0;
     slot.el.querySelector(".reader-highlight-layer")?.remove();
@@ -922,14 +934,14 @@ export class ReaderView extends FileView {
     this.scope.register(["Shift"], "F3", () => { this.search.next(true); return false; });
     for (const [name, forward] of [["ArrowLeft", false], ["ArrowRight", true]] as const) {
       this.scope.register(["Alt"], name, event => {
-        if ((event.target as HTMLElement | null)?.closest?.("input, textarea, [contenteditable='true']")) return true;
+        if (isTypingIn(event.target)) return true;
         if (!(forward ? this.forwardLocations : this.backLocations).length) return true;
         this.moveThroughPassages(forward);
         return false;
       });
     }
     const key = (modifiers: ("Shift")[], name: string, run: () => void) => this.scope!.register(modifiers, name, event => {
-      if ((event.target as HTMLElement | null)?.closest?.("input, textarea, [contenteditable='true']")) return true;
+      if (isTypingIn(event.target)) return true;
       run();
       return false;
     });
@@ -1092,9 +1104,7 @@ export class ReaderView extends FileView {
   }
 
   private showSelectionPopup(at: PopupAnchor): void {
-    const colors = this.host.settings().colors;
-    if (!colors.some(color => color.id === this.lastColor)) this.lastColor = colors[0]!.id;
-    this.popup.showSelection(at, colors, this.lastColor, {
+    this.popup.showSelection(at, this.host.settings().colors, this.selectionColor(), {
       highlight: color => this.createHighlights(color, false),
       note: () => this.createHighlights(this.lastColor, true),
       copy: () => this.copy(this.passages.map(p => p.quote.exact).join(" ")),
@@ -1130,8 +1140,14 @@ export class ReaderView extends FileView {
   addHighlight(withNote: boolean): void {
     this.passages = this.readSelection();
     if (!this.passages.length) { this.toast("Select a passage in the PDF first."); return; }
-    if (!this.host.settings().colors.some(color => color.id === this.lastColor)) this.lastColor = this.host.settings().colors[0]!.id;
-    this.createHighlights(this.lastColor, withNote);
+    this.createHighlights(this.selectionColor(), withNote);
+  }
+
+  /** The color of the last highlight made or recolored here, or the first color if it was removed. */
+  private selectionColor(): string {
+    const colors = this.host.settings().colors;
+    if (!colors.some(color => color.id === this.lastColor)) this.lastColor = colors[0]!.id;
+    return this.lastColor;
   }
 
   /** Highlights the selected passages. With `withNote`, opens the book note at the first one's section to write about it. */
