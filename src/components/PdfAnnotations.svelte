@@ -8,15 +8,15 @@
 <div class="reader-pdf-annotations">
   {#each forms as form (form.id)}
     <button type="button" class="reader-pdf-form" style:left="{form.left}%" style:top="{form.top}%"
-      style:width="{form.width}%" style:height="{form.height}%" aria-label="Fill this form in Obsidian's PDF viewer"
+      style:width="{form.width}%" style:height="{form.height}%" aria-label="Fill in Obsidian's PDF viewer"
       onclick={event => { event.stopPropagation(); openForm(); }} onpointerdown={event => event.stopPropagation()}
-      {@attach tooltip("Fill this form in Obsidian's PDF viewer")}></button>
+      {@attach tooltip("Fill in Obsidian's PDF viewer")}></button>
   {/each}
   {#each comments as comment (comment.id)}
     <button type="button" class="reader-pdf-comment clickable-icon" style:left="{comment.left}%" style:top="{comment.top}%"
-      aria-label={comment.author ? `PDF comment by ${comment.author}` : "Read PDF comment"}
+      aria-label={comment.author ? `Comment by ${comment.author}` : "PDF comment"}
       onclick={event => { event.stopPropagation(); open(comment); }}
       onpointerdown={event => event.stopPropagation()}
-      {@attach icon("message-square-text")} {@attach tooltip(comment.author ? `PDF comment by ${comment.author}` : "Read PDF comment")}></button>
+      {@attach icon("message-square-text")} {@attach tooltip(comment.author ? `Comment by ${comment.author}` : "PDF comment")}></button>
   {/each}
 </div>

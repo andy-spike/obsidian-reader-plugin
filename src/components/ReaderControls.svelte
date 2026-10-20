@@ -26,8 +26,8 @@
 </script>
 
 <div class="reader-controls" role="toolbar">
-  <IconButton icon="arrow-left" label="Back to previous passage (Alt+Left)" disabled={!current.canBack} onclick={back} />
-  <IconButton icon="arrow-right" label="Forward to next passage (Alt+Right)" disabled={!current.canForward} onclick={forward} />
+  <IconButton icon="arrow-left" label="Back (Alt+Left)" disabled={!current.canBack} onclick={back} />
+  <IconButton icon="arrow-right" label="Forward (Alt+Right)" disabled={!current.canForward} onclick={forward} />
   <div class="reader-controls-divider"></div>
   <IconButton icon="chevron-up" label="Previous page" disabled={!current.total || current.atStart} onclick={() => step(-1)} />
   <label class="reader-visually-hidden" for="reader-page-{id}">Page number</label>
@@ -46,5 +46,5 @@
   <IconButton icon="minus" label="Zoom out (-)" disabled={!current.canZoomOut} onclick={() => zoomBy(-1)} />
   <button type="button" class="reader-zoom-level" onclick={event => zoomMenu(event.currentTarget.getBoundingClientRect())} {@attach tooltip("Zoom options")}>{Math.round(current.zoom * 100)}%</button>
   <IconButton icon="plus" label="Zoom in (+)" disabled={!current.canZoomIn} onclick={() => zoomBy(1)} />
-  <IconButton icon="rotate-ccw" label="Reset zoom to fit width (0)" disabled={current.fitWidth} onclick={reset} />
+  <IconButton icon="rotate-ccw" label="Fit width (0)" disabled={current.fitWidth} onclick={reset} />
 </div>

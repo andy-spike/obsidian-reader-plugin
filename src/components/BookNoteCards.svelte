@@ -95,7 +95,7 @@
 <header class="reader-cards-header">
   <div class="reader-annotations-title">{current.title}</div>
   {#if current.cards.length}
-    <IconButton icon="file-text" label="Open the book note" onclick={() => actions.openBookNote()} />
+    <IconButton icon="file-text" label="Open book note" onclick={() => actions.openBookNote()} />
   {/if}
 </header>
 
@@ -109,7 +109,7 @@
       <div class="reader-card-top">
         <span class="reader-card-page">p. {card.page}</span>
         <span class="reader-card-actions">
-          <IconButton icon="arrow-up-right" label="Open the quote note" onclick={() => actions.openQuoteNote(card.id)} />
+          <IconButton icon="arrow-up-right" label="Open quote note" onclick={() => actions.openQuoteNote(card.id)} />
         </span>
       </div>
       <div class="reader-card-quote" role="link" tabindex="0" onclick={() => onQuoteClick(card)}
