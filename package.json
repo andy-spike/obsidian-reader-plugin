@@ -1,7 +1,7 @@
 {
   "name": "reading-desk",
   "license": "MIT",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "private": true,
   "packageManager": "pnpm@12.4.1",
   "type": "module",
