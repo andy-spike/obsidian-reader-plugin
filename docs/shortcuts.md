@@ -16,6 +16,11 @@ These single keys work while a Reader tab is active. They pause while you type i
 | 0 | Fit width |
 | Delete or Backspace | Delete the highlight whose popup is open. A notice offers Undo. |
 | 1 to 9 | In the selection popup, pick the swatch in that position |
+| Ctrl/Cmd+F | Find text in the PDF |
+| Enter / Shift+Enter | Next / previous match while the search field is focused |
+| F3 / Shift+F3 | Next / previous search match |
+| Escape | Close PDF search while its field is focused |
+| Alt+Left / Alt+Right | Back / forward through passage locations |
 
 ## Commands
 

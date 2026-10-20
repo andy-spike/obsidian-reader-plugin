@@ -1,10 +1,10 @@
-import { FileView, Menu, Scope, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { FileView, Menu, Modal, Scope, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { randomUUID } from "node:crypto";
 import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
 import type { ReadingPosition } from "./reading-state";
 import type { NotePlace } from "./settings";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
-import { loadPdf, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
+import { loadPdf, PasswordResponses, readableText, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
 import { PAGE_COLOR_CHOICES, type PageColors, showsDarkPages, toggledChoice } from "./page-colors";
 import { checkMenu, colorMenu, deleteAnnotation } from "./ui";
@@ -12,13 +12,21 @@ import { OutlineModal } from "./outline-modal";
 import type { OutlineNode } from "./outline";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
 import { mount, unmount } from "svelte";
+import { PdfSearch } from "./pdf-search";
+import { PdfPasswordModal } from "./pdf-password";
+import PdfCompatibility from "./components/PdfCompatibility.svelte";
+import PdfAnnotations from "./components/PdfAnnotations.svelte";
+import type { PdfCommentMarker, PdfFormMarker } from "./pdf-annotations";
 
-interface PdfLink {
+interface PdfAnnotation {
+  id: string;
   subtype: string;
   rect: [number, number, number, number];
   url?: string;
   dest?: string | unknown[];
   overlaidText?: string;
+  contentsObj?: { str: string };
+  titleObj?: { str: string };
 }
 
 interface PdfOutlineItem { title: string; dest: string | unknown[] | null; items: PdfOutlineItem[] }
@@ -42,6 +50,7 @@ const CONTROLS_CLEARANCE = 72;
 const MAX_CANVAS_PIXELS = 2 ** 24;
 
 type Fit = "width" | "page" | null;
+interface PassageLocation { page: number; offset: number; zoom: number; fit: Fit }
 type Passage = Pick<Annotation, "page" | "quote" | "position" | "rects">;
 interface PageSlot {
   number: number;
@@ -54,6 +63,7 @@ interface PageSlot {
   task: RenderTask | null;
   renderedZoom: number;
   text: { layer: TextLayer; el: HTMLElement } | null;
+  comments: ReturnType<typeof mount> | null;
   token: number;
   busy: boolean;
 }
@@ -117,6 +127,11 @@ export class ReaderView extends FileView {
   private modeAction!: HTMLElement;
   private pageColorsAction!: HTMLElement;
   private popup!: AnnotationPopup;
+  private search!: PdfSearch;
+  private passwordModal: PdfPasswordModal | null = null;
+  private compatibility!: ReturnType<typeof mount<Record<string, unknown>, { showForms(visible: boolean): void }>>;
+  private backLocations: PassageLocation[] = [];
+  private forwardLocations: PassageLocation[] = [];
 
   /** The file name to show until the PDF has loaded, so the tab title doesn't change while it opens. */
   private pendingTitle: string;
@@ -189,6 +204,7 @@ export class ReaderView extends FileView {
     this.showPageColors();
     this.outlineAction = this.addAction("list", "Table of contents (T)", () => void this.openOutline());
     this.outlineAction.hide();
+    this.addAction("search", "Find in PDF (Ctrl/Cmd+F)", () => this.search.focus());
 
     this.stage = contentEl.createDiv({ cls: "reader-stage", attr: { tabindex: "-1" } });
     this.pages = this.stage.createDiv({ cls: "reader-pages" });
@@ -198,8 +214,21 @@ export class ReaderView extends FileView {
     this.popup = new AnnotationPopup(this.pages, this.stage, CONTROLS_CLEARANCE, () => this.previewColor(null));
     this.register(() => this.popup.destroy());
     this.buildControls();
+    this.search = new PdfSearch(contentEl, () => this.page, page => this.navigateToPage(page), () => this.stage.focus({ preventScroll: true }));
+    this.register(() => this.search.destroy());
+    this.compatibility = mount(PdfCompatibility, { target: contentEl, props: {
+      openNative: () => { if (this.file) this.host.openNative(this.file); },
+    } });
+    this.register(() => void unmount(this.compatibility));
 
     this.registerDomEvent(this.stage, "scroll", () => this.scheduleUpdate());
+    // The text layer keeps raw PDF text so search offsets line up; copies get readable text, as in PDF.js's viewer.
+    this.registerDomEvent(this.stage, "copy", event => {
+      const selection = this.stage.ownerDocument.getSelection();
+      if (!selection || selection.isCollapsed || !event.clipboardData) return;
+      event.preventDefault();
+      event.clipboardData.setData("text/plain", readableText(selection.toString()));
+    });
     this.registerDomEvent(this.stage, "wheel", event => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
@@ -235,6 +264,8 @@ export class ReaderView extends FileView {
     this.controls = mount(ReaderControls, { target: this.contentEl, props: {
       step: (delta: 1 | -1) => this.step(delta),
       goToPage: (page: number) => this.goToPage(page),
+      back: () => this.moveThroughPassages(false),
+      forward: () => this.moveThroughPassages(true),
       done: toStage,
       zoomBy: (direction: 1 | -1) => this.zoomBy(direction),
       reset: () => this.resetZoom(),
@@ -270,16 +301,33 @@ export class ReaderView extends FileView {
     // Most PDFs open quickly; the message only appears for slow ones, so it doesn't flash.
     window.clearTimeout(this.messageTimer);
     this.messageTimer = window.setTimeout(() => { if (generation === this.generation && !this.pdf) this.showMessage("Opening PDF…"); }, 600);
+    let passwordCancelled = false;
     try {
       const data = await this.app.vault.readBinary(file);
       if (generation !== this.generation) return;
       this.record = await this.host.store.open(file.path, fingerprint(data));
       if (generation !== this.generation) return;
       this.loading = loadPdf(data);
-      const pdf = await this.loading.promise;
+      const loading = this.loading;
+      loading.onPassword = (providePassword: (password: string) => void, reason: number) => {
+        if (generation !== this.generation) return;
+        window.clearTimeout(this.messageTimer);
+        this.passwordModal = new PdfPasswordModal(this.app, reason === PasswordResponses.INCORRECT_PASSWORD, password => {
+          this.passwordModal = null;
+          if (generation !== this.generation || this.loading !== loading) return;
+          if (password !== null) providePassword(password);
+          else { passwordCancelled = true; void loading.destroy(); }
+        });
+        this.passwordModal.open();
+      };
+      const pdf = await loading.promise;
       const first = await pdf.getPage(1);
       if (generation !== this.generation) return;
       this.pdf = pdf;
+      this.search.setDocument(pdf);
+      void pdf.getFieldObjects().then(fields => {
+        if (generation === this.generation && (pdf.isPureXfa || fields && Object.keys(fields).length > 0)) this.compatibility.showForms(true);
+      }).catch(error => console.error("Could not inspect PDF forms", error));
       window.clearTimeout(this.messageTimer);
       this.message.hide();
       // Shown anyway if drawing takes long, such as for a heavy first page.
@@ -296,7 +344,7 @@ export class ReaderView extends FileView {
       if (generation !== this.generation) return;
       window.clearTimeout(this.messageTimer);
       this.reveal();
-      this.showMessage(`Could not open this PDF. ${error instanceof Error ? error.message : String(error)}`, true);
+      this.showMessage(passwordCancelled ? "PDF password entry cancelled." : `Could not open this PDF. ${error instanceof Error ? error.message : String(error)}`, true);
     }
   }
   async onUnloadFile(): Promise<void> { this.savePosition(); await this.disposePdf(); }
@@ -328,11 +376,22 @@ export class ReaderView extends FileView {
     this.message.empty();
     this.message.toggleClass("mod-error", error);
     this.message.setText(text);
+    if (error && this.file) {
+      this.message.createEl("button", { text: "Open in Obsidian's PDF viewer" }).addEventListener("click", () => {
+        if (this.file) this.host.openNative(this.file);
+      });
+    }
     this.message.show();
   }
 
   private async disposePdf(): Promise<void> {
     ++this.generation;
+    this.passwordModal?.close();
+    this.passwordModal = null;
+    this.compatibility?.showForms(false);
+    this.search?.reset();
+    this.backLocations = [];
+    this.forwardLocations = [];
     this.popup?.hide();
     for (const slot of this.active) this.releasePage(slot);
     this.slots = [];
@@ -355,7 +414,7 @@ export class ReaderView extends FileView {
     this.slots = [];
     for (let number = 1; number <= this.pdf!.numPages; number++) {
       const el = this.pages.createDiv({ cls: "reader-page", attr: { "data-page": String(number) } });
-      const slot: PageSlot = { number, el, width, height, proxy: number === 1 ? first : null, canvas: null, task: null, renderedZoom: 0, text: null, token: 0, busy: false };
+      const slot: PageSlot = { number, el, width, height, proxy: number === 1 ? first : null, canvas: null, task: null, renderedZoom: 0, text: null, comments: null, token: 0, busy: false };
       this.sizeSlot(slot);
       this.slots.push(slot);
     }
@@ -434,6 +493,35 @@ export class ReaderView extends FileView {
     else this.goToPage(this.page + delta);
   }
 
+  private passageLocation(): PassageLocation {
+    const request = this.pageRequest;
+    const requestedPage = request && Math.abs(this.stage.scrollTop - request.top) <= 1 ? this.slots[request.page - 1] : null;
+    const position = requestedPage ? {
+      page: requestedPage.number,
+      offset: Math.max(0, (this.stage.scrollTop - this.pageTop(requestedPage)) / Math.max(1, requestedPage.el.offsetHeight)),
+    } : this.measurePosition() ?? { page: this.page, offset: 0 };
+    return { ...position, zoom: this.zoom, fit: this.fit };
+  }
+
+  /** Links, outline entries, and search keep a return location without changing Obsidian's file history. */
+  private navigateToPage(page: number, offset = 0): void {
+    this.backLocations.push(this.passageLocation());
+    if (this.backLocations.length > 100) this.backLocations.shift();
+    this.forwardLocations = [];
+    this.goToPage(page, offset);
+    this.updateControls();
+  }
+
+  private moveThroughPassages(forward: boolean): void {
+    const source = forward ? this.forwardLocations : this.backLocations;
+    const target = source.pop();
+    if (!target) return;
+    (forward ? this.backLocations : this.forwardLocations).push(this.passageLocation());
+    this.setZoom(target.fit ? this.fitZoom(target.fit) : target.zoom, target.fit);
+    this.goToPage(target.page, target.offset);
+    this.updateControls();
+  }
+
   private setCurrentPage(page: number): void {
     if (page === this.page && this.slots.length) return;
     this.page = page;
@@ -454,6 +542,7 @@ export class ReaderView extends FileView {
     this.controls?.update({
       page: this.page, total: this.slots.length, atStart: this.page <= 1 && (this.stage?.scrollTop ?? 0) <= 8,
       zoom: this.zoom, canZoomOut: this.zoom > MIN_ZOOM, canZoomIn: this.zoom < MAX_ZOOM, fitWidth: this.fit === "width",
+      canBack: this.backLocations.length > 0, canForward: this.forwardLocations.length > 0,
     });
   }
 
@@ -573,7 +662,8 @@ export class ReaderView extends FileView {
       this.revealIfDrawn();
       if (slot.text) slot.text.layer.update({ viewport });
       else {
-        const content = await page.getTextContent();
+        // Match the find controller's raw-text offsets, including ligatures and compatibility characters.
+        const content = await page.getTextContent({ disableNormalization: true });
         if (stale()) return;
         const el = slot.el.createDiv({ cls: "textLayer" });
         const layer = new TextLayer({ textContentSource: content, container: el, viewport });
@@ -583,8 +673,9 @@ export class ReaderView extends FileView {
         el.createDiv({ cls: "endOfContent" });
         slot.text = { layer, el };
         this.drawMarks(slot);
-        await this.renderLinks(slot, page, stale);
+        await this.renderPdfAnnotations(slot, page, stale);
       }
+      if (slot.text) this.search.attach(slot.number, slot.el, slot.text.layer);
     } catch (error) {
       if (error instanceof RenderingCancelledException || stale()) return;
       slot.el.empty();
@@ -596,19 +687,29 @@ export class ReaderView extends FileView {
     }
   }
 
-  private async renderLinks(slot: PageSlot, page: PDFPageProxy, stale: () => boolean): Promise<void> {
+  private async renderPdfAnnotations(slot: PageSlot, page: PDFPageProxy, stale: () => boolean): Promise<void> {
     const pdf = this.pdf!;
-    const annotations = await page.getAnnotations() as PdfLink[];
+    const annotations = await page.getAnnotations() as PdfAnnotation[];
     if (stale()) return;
     const viewport = page.getViewport({ scale: 1 });
     const layer = slot.el.createDiv({ cls: "reader-link-layer" });
+    const comments: PdfCommentMarker[] = [];
+    const forms: PdfFormMarker[] = [];
     for (const annotation of annotations) {
-      // PDF.js supplies validated URLs. Never fall back to its unsafeUrl or execute PDF actions.
-      if (annotation.subtype !== "Link" || (!annotation.url && !annotation.dest)) continue;
       const [x1, y1, x2, y2] = annotation.rect;
       if (![x1, y1, x2, y2].every(value => typeof value === "number" && Number.isFinite(value))) continue;
       const [left, top] = viewport.convertToViewportPoint(x1, y1) as [number, number];
       const [right, bottom] = viewport.convertToViewportPoint(x2, y2) as [number, number];
+      const leftPercent = Math.min(left, right) / viewport.width * 100;
+      const topPercent = Math.min(top, bottom) / viewport.height * 100;
+      if (annotation.subtype === "Widget") {
+        this.compatibility.showForms(true);
+        forms.push({ id: annotation.id, left: leftPercent, top: topPercent, width: Math.abs(right - left) / viewport.width * 100, height: Math.abs(bottom - top) / viewport.height * 100 });
+      } else if (annotation.subtype !== "Popup" && annotation.subtype !== "Link" && annotation.contentsObj?.str.trim()) {
+        comments.push({ id: annotation.id, left: Math.max(0, Math.min(96, leftPercent)), top: Math.max(0, Math.min(96, topPercent)), text: annotation.contentsObj.str, author: annotation.titleObj?.str ?? "" });
+      }
+      // PDF.js supplies validated URLs. Never fall back to its unsafeUrl or execute PDF actions.
+      if (annotation.subtype !== "Link" || (!annotation.url && !annotation.dest)) continue;
       const link = layer.createEl("a", { attr: {
         href: annotation.url ?? "#",
         "aria-label": annotation.overlaidText || annotation.url || "Go to linked passage",
@@ -638,14 +739,31 @@ export class ReaderView extends FileView {
           this.contentEl.ownerDocument.defaultView?.open(annotation.url, "_blank", "noopener,noreferrer");
         } else if (annotation.dest) {
           void this.resolveDestination(pdf, annotation.dest).then(target => {
-            if (target && pdf === this.pdf) this.goToPage(target.page, target.offset);
+            if (target && pdf === this.pdf) this.navigateToPage(target.page, target.offset);
           }).catch(error => console.error("Could not follow PDF link", error));
         }
       });
     }
+    if (comments.length || forms.length) {
+      slot.comments = mount(PdfAnnotations, { target: slot.el, props: {
+        comments, forms,
+        open: (comment: PdfCommentMarker) => {
+          this.dismissPopup();
+          const modal = new Modal(this.app);
+          modal.setTitle(comment.author ? `PDF comment by ${comment.author}` : "PDF comment");
+          modal.contentEl.createDiv({ cls: "reader-pdf-comment-text", text: comment.text });
+          modal.open();
+        },
+        openForm: () => { if (this.file) this.host.openNative(this.file); },
+      } });
+    }
   }
 
   private releasePage(slot: PageSlot): void {
+    if (slot.comments) void unmount(slot.comments);
+    slot.comments = null;
+    this.search.detach(slot.number);
+    slot.el.querySelector(".reader-search-marks")?.remove();
     slot.token++;
     slot.busy = false;
     slot.task?.cancel();
@@ -797,6 +915,17 @@ export class ReaderView extends FileView {
    */
   private bindKeys(): void {
     this.scope = new Scope(this.app.scope);
+    this.scope.register(["Mod"], "f", () => { this.search.focus(); return false; });
+    this.scope.register([], "F3", () => { this.search.next(); return false; });
+    this.scope.register(["Shift"], "F3", () => { this.search.next(true); return false; });
+    for (const [name, forward] of [["ArrowLeft", false], ["ArrowRight", true]] as const) {
+      this.scope.register(["Alt"], name, event => {
+        if ((event.target as HTMLElement | null)?.closest?.("input, textarea, [contenteditable='true']")) return true;
+        if (!(forward ? this.forwardLocations : this.backLocations).length) return true;
+        this.moveThroughPassages(forward);
+        return false;
+      });
+    }
     const key = (modifiers: ("Shift")[], name: string, run: () => void) => this.scope!.register(modifiers, name, event => {
       if ((event.target as HTMLElement | null)?.closest?.("input, textarea, [contenteditable='true']")) return true;
       run();
@@ -920,14 +1049,15 @@ export class ReaderView extends FileView {
       // Offsets count text only. The quote keeps PDF.js line breaks so words on adjacent lines stay apart.
       const fragment = part.cloneContents();
       fragment.querySelectorAll("br").forEach(br => br.replaceWith("\n"));
-      const exact = (fragment.textContent ?? raw).trim();
+      // The raw text layer can contain ligatures such as "ﬁ"; quotes store the readable form.
+      const exact = readableText((fragment.textContent ?? raw).trim());
       const before = doc.createRange();
       before.setStart(layer, 0);
       before.setEnd(part.startContainer, part.startOffset);
       const start = before.toString().length, end = start + raw.length;
       const full = layer.textContent ?? "";
       const rects = this.lineRects(part, layer, slot.el.getBoundingClientRect());
-      if (rects.length) passages.push({ page: slot.number, quote: { exact, prefix: full.slice(Math.max(0, start - 48), start), suffix: full.slice(end, end + 48) }, position: { start, end }, rects });
+      if (rects.length) passages.push({ page: slot.number, quote: { exact, prefix: readableText(full.slice(Math.max(0, start - 48), start)), suffix: readableText(full.slice(end, end + 48)) }, position: { start, end }, rects });
     }
     return passages;
   }
@@ -1121,7 +1251,7 @@ export class ReaderView extends FileView {
     for (const node of nodes) if (node.page !== undefined && node.page <= this.page && (current === null || node.page >= nodes[current]!.page!)) current = node.id;
     new OutlineModal(this.app, nodes, current, node => {
       const target = resolved[node.id];
-      if (target && pdf === this.pdf) this.goToPage(target.page, target.offset);
+      if (target && pdf === this.pdf) this.navigateToPage(target.page, target.offset);
     }).open();
   }
 

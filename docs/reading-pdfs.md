@@ -6,6 +6,7 @@ Reader shows the whole PDF as one continuous scroll. Long books stay responsive 
 
 A bar floats at the bottom center of the pane. From left to right it has:
 
+- Back and Forward arrows for returning from PDF links, outline entries, and search results
 - previous and next page arrows
 - a page number field, where you can type a page and press Enter
 - zoom out and zoom in
@@ -54,6 +55,24 @@ The table of contents opens as a dialog in the middle of the window. It has a fi
 Reader remembers the page, the position on the page, and the zoom for every PDF you read. Close the PDF, restart Obsidian, or open the PDF in a new tab, and you continue where you stopped. A link that names a page, like `[[Book.pdf#page=40]]`, still opens at that page.
 
 Renaming the PDF keeps its position. Reader remembers the 200 PDFs you read most recently.
+
+## Finding text
+
+Press **Ctrl+F**, or **Cmd+F** on macOS, or click the search button in the Reader header. Type to search the whole PDF. Reader marks the matches on the page and shows your position in the result count.
+
+Press **Enter** for the next match and **Shift+Enter** for the previous one. **F3** and **Shift+F3** also move between matches. Search wraps at the end of the document. **Escape** closes the search bar and removes its marks. Search ignores case and handles PDF line breaks and ligatures through PDF.js.
+
+Following an internal PDF link, an outline entry, or a search result keeps a return location. Use the bottom bar's Back and Forward buttons, or **Alt+Left** and **Alt+Right**, to revisit those locations. This history lasts for the open Reader tab.
+
+## Passwords, PDF comments, and forms
+
+Reader prompts when a PDF requires a password. An incorrect password offers another attempt; Cancel stops opening the document. Passwords are used only to unlock the PDF and are not saved in settings or notes.
+
+Existing comments embedded in a PDF appear as comment buttons on the page. Click one to read its text. These comments remain part of the original PDF and are separate from Reading Desk's Markdown passage notes.
+
+Reader displays form PDFs for reading and highlighting. A notice identifies their form fields. Click **Fill forms in Obsidian's PDF viewer**, or click a form field, to open the interactive form in Obsidian's normal viewer. Reader does not edit or save form values itself.
+
+If a PDF cannot open, its error message also offers a button for opening the normal viewer.
 
 ## Scanned PDFs
 

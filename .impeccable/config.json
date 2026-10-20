@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "styles.css"
+        ],
+        "createdAt": "2026-10-20T00:45:59.472Z",
+        "reason": "Agent: existing quote-callout border predates this task at 19b051a; its color identifies the linked PDF highlight, as documented by the adjacent CSS comment and book-note design."
+      }
+    ]
+  }
+}
