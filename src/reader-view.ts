@@ -18,6 +18,7 @@ import PdfCompatibility from "./components/PdfCompatibility.svelte";
 import PdfAnnotations from "./components/PdfAnnotations.svelte";
 import type { PdfCommentMarker, PdfFormMarker } from "./pdf-annotations";
 import { pdfTitle } from "./paths";
+import { errorMessage } from "./errors";
 
 interface PdfAnnotation {
   id: string;
@@ -345,7 +346,7 @@ export class ReaderView extends FileView {
       if (generation !== this.generation) return;
       window.clearTimeout(this.messageTimer);
       this.reveal();
-      this.showMessage(passwordCancelled ? "PDF password entry cancelled." : `Could not open this PDF. ${error instanceof Error ? error.message : String(error)}`, true);
+      this.showMessage(passwordCancelled ? "PDF password entry cancelled." : `Could not open this PDF. ${errorMessage(error)}`, true);
     }
   }
   async onUnloadFile(): Promise<void> { this.savePosition(); await this.disposePdf(); }

@@ -11,6 +11,9 @@ import { SavedReadingState } from "./reading-state";
 import { stopPdfWorker } from "./pdf-engine";
 import { forgetPdfPageColors, renamePdfPageColors } from "./page-colors";
 import { colorOf, loadSettings, NotePlace, ReaderSettings, ReaderSettingTab, SettingsHost } from "./settings";
+import { errorMessage } from "./errors";
+
+const pdfCount = (count: number): string => `${count} ${count === 1 ? "PDF" : "PDFs"}`;
 
 export default class ReaderPlugin extends Plugin implements SettingsHost {
   private saved!: SavedReadingState<ReaderSettings>;
@@ -145,19 +148,17 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       },
     }));
     // Comments show as dots on highlights, so redraw them when a quote note changes.
-    this.register(quoteNotes.subscribe(documentId => {
-      this.readers().forEach(reader => { if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations(); });
-    }));
+    this.register(quoteNotes.subscribe(documentId => this.refreshReadersOf(documentId)));
     // What you wrote in a book note shows as dots on highlights, so redraw them when it changes.
     // A PDF's first highlight creates its note; the sidebar tab then switches from its placeholder to the note.
     this.register(bookNotes.subscribe(documentId => {
-      this.readers().forEach(reader => { if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations(); });
+      this.refreshReadersOf(documentId);
       void following.changed(documentId).catch(reportNoteError);
     }));
     this.addSettingTab(this.settingTab = new ReaderSettingTab(this.app, this));
     // Earlier versions kept records in a visible folder by default; move them to the hidden one once. A chosen folder stays.
     if (this.settings.folder === LEGACY_ANNOTATION_FOLDER) workspace.onLayoutReady(() => void this.moveAnnotations(ANNOTATION_FOLDER, moved =>
-      moved ? `Highlight data for ${moved} ${moved === 1 ? "PDF" : "PDFs"} moved to the hidden folder ${ANNOTATION_FOLDER}.` : ""));
+      moved ? `Highlight data for ${pdfCount(moved)} moved to the hidden folder ${ANNOTATION_FOLDER}.` : ""));
     // Saving is silent while it works. Report a failing vault write once, and again when it recovers.
     const failing = new Set<string>();
     this.register(store.subscribe(record => {
@@ -318,7 +319,7 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       if (renamePdfPageColors(this.settings.pdfPageColors, oldPath, file.path)) void this.saveSettings();
       this.saved.rename(oldPath, file.path);
       if (file instanceof TFile) bookNotes.renamed(file, oldPath);
-      void store.rename(oldPath, file.path).catch((error: unknown) => new Notice(`Could not update annotation source: ${error instanceof Error ? error.message : String(error)}`));
+      void store.rename(oldPath, file.path).catch((error: unknown) => new Notice(`Could not update annotation source: ${errorMessage(error)}`));
     }));
     this.registerObsidianProtocolHandler("reader-plugin", params => void openPassage(params));
     if (__DEV__) {
@@ -349,6 +350,13 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     return this.app.workspace.getLeavesOfType(READER_VIEW).map(leaf => leaf.view).filter((view): view is ReaderView => view instanceof ReaderView);
   }
 
+  /** Redraws the highlights of every Reader showing this document. */
+  private refreshReadersOf(documentId: string): void {
+    for (const reader of this.readers()) {
+      if (reader.getRecord()?.documentId === documentId) reader.refreshAnnotations();
+    }
+  }
+
   private applySettings(): void {
     this.readers().forEach(reader => reader.refreshSettings());
     this.paintQuotes?.();
@@ -371,10 +379,10 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
       // Obsidian's non-recursive rmdir fails on empty folders under current Electron, so check first and remove the empty folder.
       const left = await this.app.vault.adapter.list(from).catch(() => null);
       if (left && !left.files.length && !left.folders.length) await this.app.vault.adapter.rmdir(from, true).catch(() => {});
-      const message = done ? done(moved) : moved ? `Moved annotations for ${moved} ${moved === 1 ? "PDF" : "PDFs"} to ${folder}.` : `Annotations will be saved in ${folder}.`;
+      const message = done ? done(moved) : moved ? `Moved annotations for ${pdfCount(moved)} to ${folder}.` : `Annotations will be saved in ${folder}.`;
       if (message) new Notice(message);
     } catch (error) {
-      new Notice(`Could not move annotations to ${folder}: ${error instanceof Error ? error.message : String(error)}`);
+      new Notice(`Could not move annotations to ${folder}: ${errorMessage(error)}`);
     }
   }
 

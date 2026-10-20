@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { errorMessage } from "./errors";
 import { isSameOrInside } from "./paths";
 
 /** A hidden folder: Obsidian leaves it out of the file list, search, and graph. Sync tools that copy hidden files still carry it. */
@@ -156,7 +157,7 @@ export class AnnotationStore {
         }
       } catch (error) {
         if (this.revisions.get(id) === revision) {
-          this.states.set(id, { saving: false, error: error instanceof Error ? error.message : String(error) });
+          this.states.set(id, { saving: false, error: errorMessage(error) });
           this.notify(record);
           if (!this.closed) this.retries.set(id, window.setTimeout(() => {
             this.retries.delete(id);
