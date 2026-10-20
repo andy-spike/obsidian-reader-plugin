@@ -429,12 +429,7 @@ export class ReaderView extends FileView {
     // A background tab has no layout yet. Keep the request until the resize observer reports a size.
     if (!restore || !this.slots.length || !this.stage.clientHeight) return;
     this.restore = null;
-    const zoom = restore.zoom;
-    if (zoom === "page" || zoom === "width" || zoom === "fit") {
-      const fit = zoom === "page" ? "page" : "width";
-      this.setZoom(this.fitZoom(fit), fit, undefined, false);
-    } else if (typeof zoom === "number") this.setZoom(zoom, null, undefined, false);
-    else this.setZoom(this.fit ? this.fitZoom(this.fit) : this.zoom, this.fit, undefined, false);
+    this.applySavedZoom(restore.zoom);
     if (restore.page !== undefined) {
       this.goToPage(restore.page, restore.offset ?? 0);
       // Saved page/offset describe the viewport's top, not a page explicitly chosen in the toolbar.
@@ -442,6 +437,15 @@ export class ReaderView extends FileView {
     } else {
       this.scheduleUpdate();
     }
+  }
+
+  /** Applies a saved zoom, or the current one when none was saved. Either way, pages get their size at that zoom. */
+  private applySavedZoom(zoom: unknown): void {
+    if (zoom === "page" || zoom === "width" || zoom === "fit") {
+      const fit = zoom === "page" ? "page" : "width";
+      this.setZoom(this.fitZoom(fit), fit, undefined, false);
+    } else if (typeof zoom === "number") this.setZoom(zoom, null, undefined, false);
+    else this.setZoom(this.fit ? this.fitZoom(this.fit) : this.zoom, this.fit, undefined, false);
   }
 
   // ---- Layout and navigation ----
@@ -467,12 +471,19 @@ export class ReaderView extends FileView {
   }
 
   goToPage(page: number, offset = 0): void {
-    const slot = this.slots[Math.max(1, Math.min(this.slots.length, Math.trunc(page) || 1)) - 1];
-    if (!slot) return;
-    if (!this.stage.clientHeight) {
-      this.restore = { ...this.restore, page: slot.number, offset };
+    // While the PDF is still loading, or the tab has no layout, keep the request; `applyRestore` goes there once it can.
+    if (!this.slots.length || !this.stage.clientHeight) {
+      this.restore = { ...this.restore, page: Math.trunc(page) || 1, offset };
       return;
     }
+    // A saved position still waiting to be applied would later move the view back, so this page replaces it.
+    // Its zoom applies first: a tab loaded in the background has not sized its pages yet.
+    if (this.restore) {
+      const { zoom } = this.restore;
+      this.restore = null;
+      this.applySavedZoom(zoom);
+    }
+    const slot = this.slots[Math.max(1, Math.min(this.slots.length, Math.trunc(page) || 1)) - 1]!;
     this.stage.scrollTop = offset ? this.pageTop(slot) + offset * slot.el.offsetHeight : this.pageTop(slot) - 8;
     this.pageRequest = { page: slot.number, top: this.stage.scrollTop };
     this.position = this.measurePosition();

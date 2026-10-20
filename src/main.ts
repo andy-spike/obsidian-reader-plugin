@@ -261,6 +261,8 @@ export default class ReaderPlugin extends Plugin implements SettingsHost {
     // A tab not shown since Obsidian started is still a placeholder; its saved state names the file, and revealing it loads it.
     const existing = native ? null : workspace.getLeavesOfType(READER_VIEW).find(leaf => leaf.getViewState().state?.file === file.path);
     if (existing) {
+      // Load a placeholder tab fully first. Its view otherwise receives its saved position after the page requested here.
+      await existing.loadIfDeferred();
       await workspace.revealLeaf(existing);
       workspace.setActiveLeaf(existing, { focus: true });
       const reader = existing.view instanceof ReaderView ? existing.view : null;
