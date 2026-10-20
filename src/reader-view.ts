@@ -17,6 +17,7 @@ import { PdfPasswordModal } from "./pdf-password";
 import PdfCompatibility from "./components/PdfCompatibility.svelte";
 import PdfAnnotations from "./components/PdfAnnotations.svelte";
 import type { PdfCommentMarker, PdfFormMarker } from "./pdf-annotations";
+import { pdfTitle } from "./paths";
 
 interface PdfAnnotation {
   id: string;
@@ -88,7 +89,7 @@ export interface ReaderHost {
   choosePageColors(path: string, choice: PageColors | undefined): void;
 }
 
-const titleOf = (path: unknown): string => typeof path === "string" ? path.split("/").pop()!.replace(/\.pdf$/i, "") : "";
+const titleOf = (path: unknown): string => typeof path === "string" ? pdfTitle(path) : "";
 
 export class ReaderView extends FileView {
   private pdf: PDFDocumentProxy | null = null;

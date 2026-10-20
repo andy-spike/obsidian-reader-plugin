@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { isSameOrInside } from "./paths";
 
 /** A hidden folder: Obsidian leaves it out of the file list, search, and graph. Sync tools that copy hidden files still carry it. */
 export const ANNOTATION_FOLDER = ".reader-annotations";
@@ -176,7 +177,7 @@ export class AnnotationStore {
       for (const path of (await this.storage.list(this.folder)).files.filter(path => path.endsWith(".json"))) {
         const loaded = parseRecord(await this.storage.read(path));
         const record = this.records.get(loaded.documentId) ?? loaded;
-        const moves = (path: string | undefined) => !!path && (path === oldPath || path.startsWith(oldPath + "/"));
+        const moves = (path: string | undefined) => !!path && isSameOrInside(path, oldPath);
         if (moves(record.sourcePath) || moves(record.notePath)) {
           if (moves(record.sourcePath)) record.sourcePath = newPath + record.sourcePath.slice(oldPath.length);
           if (moves(record.notePath)) record.notePath = newPath + record.notePath!.slice(oldPath.length);

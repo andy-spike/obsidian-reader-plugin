@@ -1,3 +1,5 @@
+import { isSameOrInside } from "./paths";
+
 /**
  * How Reader colors PDF pages. "original" draws the PDF's own colors, "inverted" always shows light text on dark pages,
  * and "follow" shows dark pages only while Obsidian uses a dark theme.
@@ -41,7 +43,7 @@ export function loadPdfPageColors(saved: unknown): Record<string, PageColors> {
 export function renamePdfPageColors(choices: Record<string, PageColors>, oldPath: string, newPath: string): boolean {
   let moved = false;
   for (const [path, value] of Object.entries(choices)) {
-    if (path !== oldPath && !path.startsWith(oldPath + "/")) continue;
+    if (!isSameOrInside(path, oldPath)) continue;
     delete choices[path];
     choices[newPath + path.slice(oldPath.length)] = value;
     moved = true;
@@ -53,7 +55,7 @@ export function renamePdfPageColors(choices: Record<string, PageColors>, oldPath
 export function forgetPdfPageColors(choices: Record<string, PageColors>, deletedPath: string): boolean {
   let removed = false;
   for (const path of Object.keys(choices)) {
-    if (path !== deletedPath && !path.startsWith(deletedPath + "/")) continue;
+    if (!isSameOrInside(path, deletedPath)) continue;
     delete choices[path];
     removed = true;
   }

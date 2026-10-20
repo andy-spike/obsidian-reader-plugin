@@ -1,3 +1,5 @@
+import { isSameOrInside } from "./paths";
+
 /** A page, its visible offset, and either a fixed zoom or a fit mode. Shared by persistence and Reader views. */
 export interface ReadingPosition { page: number; offset: number; zoom: number | "width" | "page" }
 
@@ -55,7 +57,7 @@ export class SavedReadingState<Settings extends object> {
   rename(oldPath: string, newPath: string): void {
     if (this.closed) return;
     for (const [path, position] of [...this.positions]) {
-      if (path !== oldPath && !path.startsWith(oldPath + "/")) continue;
+      if (!isSameOrInside(path, oldPath)) continue;
       this.positions.delete(path);
       this.pending.set(path, ++this.revision);
       const target = newPath + path.slice(oldPath.length);

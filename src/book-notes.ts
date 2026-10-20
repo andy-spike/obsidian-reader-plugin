@@ -3,6 +3,7 @@ import type { AnnotationRecord, AnnotationStore } from "./annotations";
 import { BookNoteReconciler, ReconcileOptions, defaultNoteHeader, fillTemplate, findSections, noteFileName } from "./book-note";
 import type { QuoteNotes } from "./quote-notes";
 import type { ReaderSettings } from "./settings";
+import { pdfTitle } from "./paths";
 import type { AnnotationsView } from "./annotations-view";
 
 function localDate(): string {
@@ -180,7 +181,7 @@ export class BookNotes {
 
   private title(record: AnnotationRecord): string {
     const pdf = this.app.vault.getAbstractFileByPath(record.sourcePath);
-    return pdf instanceof TFile ? pdf.basename : record.sourcePath.split("/").pop()!.replace(/\.pdf$/i, "");
+    return pdf instanceof TFile ? pdf.basename : pdfTitle(record.sourcePath);
   }
 
   /** A link to the PDF from a note at `fromPath`. */
