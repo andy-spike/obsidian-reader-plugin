@@ -105,6 +105,8 @@ Three modules keep reading workflow rules out of plugin startup:
 - `BookNoteFollowing` in `src/book-note-following.ts` owns the active PDF, dismissal, and serialized opening of book notes. `ObsidianBookNoteWorkspace` supplies tab and focus operations.
 - `SavedReadingState` in `src/reading-state.ts` owns the shared settings and reading-position file. It handles debounce, serialized snapshots, external reloads, renames, eviction, retries, and the final flush on unloading. Pending positions remain local until their write succeeds. External changes received during a write trigger a fresh snapshot after it finishes.
 
+`ReaderView` in `src/reader-view.ts` handles page layout, rendering, navigation, and the popup. `src/pdf-selection.ts` converts text selections into passages, `src/pdf-page-annotations.ts` draws a PDF's own links, comments, and form fields, and `src/pdf-outline.ts` resolves the table of contents and link destinations. In `src/main.ts`, `PdfRouting` moves PDF tabs to Reader, `QuoteColors` colors book-note quotes, and `passageLinkAt` finds passage links under the pointer.
+
 ## Commits
 
 Agents should commit each completed unit of work, such as a verified fix or a finished feature. Commit often, and keep each commit focused so the history shows progress clearly.
