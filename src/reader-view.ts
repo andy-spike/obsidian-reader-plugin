@@ -1,6 +1,6 @@
-import { FileView, Menu, Modal, Scope, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { FileView, Menu, Scope, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { randomUUID } from "node:crypto";
-import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from "./annotations";
+import { Annotation, AnnotationRecord, AnnotationStore, fingerprint } from "./annotations";
 import type { ReadingPosition } from "./reading-state";
 import type { NotePlace } from "./settings";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
@@ -9,34 +9,16 @@ import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
 import { PAGE_COLOR_CHOICES, type PageColors, showsDarkPages, toggledChoice } from "./page-colors";
 import { checkMenu, colorMenu, deleteAnnotation } from "./ui";
 import { OutlineModal } from "./outline-modal";
-import type { OutlineNode } from "./outline";
 import ReaderControls, { type ControlsState } from "./components/ReaderControls.svelte";
 import { mount, unmount } from "svelte";
 import { PdfSearch } from "./pdf-search";
 import { PdfPasswordModal } from "./pdf-password";
 import PdfCompatibility from "./components/PdfCompatibility.svelte";
-import PdfAnnotations from "./components/PdfAnnotations.svelte";
-import type { PdfCommentMarker, PdfFormMarker } from "./pdf-annotations";
+import { renderPageAnnotations, showPdfComment } from "./pdf-page-annotations";
+import { currentSection, loadOutline, PageTarget, PdfDestination, resolveDestination } from "./pdf-outline";
+import { Passage, selectedPassages } from "./pdf-selection";
 import { pdfTitle } from "./paths";
 import { errorMessage } from "./errors";
-
-interface PdfAnnotation {
-  id: string;
-  subtype: string;
-  rect: [number, number, number, number];
-  url?: string;
-  dest?: string | unknown[];
-  overlaidText?: string;
-  contentsObj?: { str: string };
-  titleObj?: { str: string };
-}
-
-interface PdfOutlineItem { title: string; dest: string | unknown[] | null; items: PdfOutlineItem[] }
-
-function isPdfReference(value: unknown): value is { num: number; gen: number } {
-  return typeof value === "object" && value !== null && "num" in value && "gen" in value
-    && typeof value.num === "number" && typeof value.gen === "number";
-}
 
 export const READER_VIEW = "reader-plugin-pdf";
 /** PDF points to CSS pixels, so 100% matches the printed page size like other PDF viewers. */
@@ -53,7 +35,6 @@ const MAX_CANVAS_PIXELS = 2 ** 24;
 
 type Fit = "width" | "page" | null;
 interface PassageLocation { page: number; offset: number; zoom: number; fit: Fit }
-type Passage = Pick<Annotation, "page" | "quote" | "position" | "rects">;
 interface PageSlot {
   number: number;
   el: HTMLElement;
@@ -704,74 +685,21 @@ export class ReaderView extends FileView {
 
   private async renderPdfAnnotations(slot: PageSlot, page: PDFPageProxy, stale: () => boolean): Promise<void> {
     const pdf = this.pdf!;
-    const annotations = await page.getAnnotations() as PdfAnnotation[];
-    if (stale()) return;
-    const viewport = page.getViewport({ scale: 1 });
-    const layer = slot.el.createDiv({ cls: "reader-link-layer" });
-    const comments: PdfCommentMarker[] = [];
-    const forms: PdfFormMarker[] = [];
-    for (const annotation of annotations) {
-      const [x1, y1, x2, y2] = annotation.rect;
-      if (![x1, y1, x2, y2].every(value => typeof value === "number" && Number.isFinite(value))) continue;
-      const [left, top] = viewport.convertToViewportPoint(x1, y1) as [number, number];
-      const [right, bottom] = viewport.convertToViewportPoint(x2, y2) as [number, number];
-      // Percentages of the page, so the boxes follow zoom without being redrawn.
-      const box = {
-        left: Math.min(left, right) / viewport.width * 100,
-        top: Math.min(top, bottom) / viewport.height * 100,
-        width: Math.abs(right - left) / viewport.width * 100,
-        height: Math.abs(bottom - top) / viewport.height * 100,
-      };
-      if (annotation.subtype === "Widget") {
-        this.compatibility.showForms(true);
-        forms.push({ id: annotation.id, ...box });
-      } else if (annotation.subtype !== "Popup" && annotation.subtype !== "Link" && annotation.contentsObj?.str.trim()) {
-        comments.push({ id: annotation.id, left: Math.max(0, Math.min(96, box.left)), top: Math.max(0, Math.min(96, box.top)), text: annotation.contentsObj.str, author: annotation.titleObj?.str ?? "" });
-      }
-      // PDF.js supplies validated URLs. Never fall back to its unsafeUrl or execute PDF actions.
-      if (annotation.subtype !== "Link" || (!annotation.url && !annotation.dest)) continue;
-      const link = layer.createEl("a", { attr: {
-        href: annotation.url ?? "#",
-        "aria-label": annotation.overlaidText || annotation.url || "Go to linked passage",
-      } });
-      link.draggable = false;
-      link.setCssProps({ left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%` });
-      if (annotation.url) {
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-      } else {
-        link.dataset.pdfDestination = "true";
-      }
-      // Leave text-selection and highlight popups out of link activation.
-      link.addEventListener("pointerdown", event => {
-        event.stopPropagation();
+    const markers = await renderPageAnnotations(slot.el, page, stale, {
+      foundForms: () => this.compatibility.showForms(true),
+      dismissPopup: () => this.dismissPopup(),
+      followDestination: dest => {
+        void this.destinationTarget(pdf, dest).then(target => {
+          if (target && pdf === this.pdf) this.navigateToPage(target.page, target.offset);
+        }).catch(error => console.error("Could not follow PDF link", error));
+      },
+      openComment: comment => {
         this.dismissPopup();
-      });
-      link.addEventListener("click", event => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (annotation.url) {
-          this.contentEl.ownerDocument.defaultView?.open(annotation.url, "_blank", "noopener,noreferrer");
-        } else if (annotation.dest) {
-          void this.resolveDestination(pdf, annotation.dest).then(target => {
-            if (target && pdf === this.pdf) this.navigateToPage(target.page, target.offset);
-          }).catch(error => console.error("Could not follow PDF link", error));
-        }
-      });
-    }
-    if (comments.length || forms.length) {
-      slot.comments = mount(PdfAnnotations, { target: slot.el, props: {
-        comments, forms,
-        open: (comment: PdfCommentMarker) => {
-          this.dismissPopup();
-          const modal = new Modal(this.app);
-          modal.setTitle(comment.author ? `PDF comment by ${comment.author}` : "PDF comment");
-          modal.contentEl.createDiv({ cls: "reader-pdf-comment-text", text: comment.text });
-          modal.open();
-        },
-        openForm: () => { if (this.file) this.host.openNative(this.file); },
-      } });
-    }
+        showPdfComment(this.app, comment);
+      },
+      openForm: () => { if (this.file) this.host.openNative(this.file); },
+    });
+    if (markers) slot.comments = markers;
   }
 
   private releasePage(slot: PageSlot): void {
@@ -1044,63 +972,10 @@ export class ReaderView extends FileView {
     this.popup.hide();
   }
 
-  /** Converts the DOM selection into one passage per page it touches. */
+  /** Converts the DOM selection into one passage per drawn page it touches. */
   private readSelection(): Passage[] {
-    const doc = this.contentEl.ownerDocument;
-    const selection = doc.getSelection();
-    if (!selection?.rangeCount || selection.isCollapsed) return [];
-    const range = selection.getRangeAt(0);
-    const passages: Passage[] = [];
-    for (const slot of [...this.active].sort((a, b) => a.number - b.number)) {
-      const layer = slot.text?.el;
-      if (!layer || !range.intersectsNode(layer)) continue;
-      const part = doc.createRange();
-      part.selectNodeContents(layer);
-      if (layer.contains(range.startContainer)) part.setStart(range.startContainer, range.startOffset);
-      if (layer.contains(range.endContainer)) part.setEnd(range.endContainer, range.endOffset);
-      const raw = part.toString();
-      if (!raw.trim()) continue;
-      // Offsets count text only. The quote keeps PDF.js line breaks so words on adjacent lines stay apart.
-      const fragment = part.cloneContents();
-      fragment.querySelectorAll("br").forEach(br => br.replaceWith("\n"));
-      // The raw text layer can contain ligatures such as "ﬁ"; quotes store the readable form.
-      const exact = readableText((fragment.textContent ?? raw).trim());
-      const before = doc.createRange();
-      before.setStart(layer, 0);
-      before.setEnd(part.startContainer, part.startOffset);
-      const start = before.toString().length, end = start + raw.length;
-      const full = layer.textContent ?? "";
-      const rects = this.lineRects(part, layer, slot.el.getBoundingClientRect());
-      if (rects.length) passages.push({ page: slot.number, quote: { exact, prefix: readableText(full.slice(Math.max(0, start - 48), start)), suffix: readableText(full.slice(end, end + 48)) }, position: { start, end }, rects });
-    }
-    return passages;
-  }
-
-  /** Measures selected text node by node, then joins pieces on the same line into one clean bar. */
-  private lineRects(range: Range, layer: HTMLElement, page: DOMRect): Rect[] {
-    const doc = layer.ownerDocument;
-    const pieces: DOMRect[] = [];
-    const walker = doc.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      if (!range.intersectsNode(node) || !node.textContent?.trim()) continue;
-      const part = doc.createRange();
-      part.selectNodeContents(node);
-      if (node === range.startContainer) part.setStart(node, range.startOffset);
-      if (node === range.endContainer) part.setEnd(node, range.endOffset);
-      if (!part.collapsed) pieces.push(...Array.from(part.getClientRects()).filter(r => r.width > 0.5 && r.height > 0.5));
-    }
-    pieces.sort((a, b) => a.top - b.top || a.left - b.left);
-    const lines: { left: number; top: number; right: number; bottom: number }[] = [];
-    for (const r of pieces) {
-      const line = lines.find(l => Math.abs((l.top + l.bottom) / 2 - (r.top + r.bottom) / 2) < Math.min(l.bottom - l.top, r.height) * 0.5 && r.left - l.right < r.height * 1.5 && l.left - r.right < r.height * 1.5);
-      if (line) Object.assign(line, { left: Math.min(line.left, r.left), top: Math.min(line.top, r.top), right: Math.max(line.right, r.right), bottom: Math.max(line.bottom, r.bottom) });
-      else lines.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
-    }
-    const clamp = (value: number) => Math.max(0, Math.min(1, value));
-    return lines.map(l => {
-      const x = clamp((l.left - page.left) / page.width), y = clamp((l.top - page.top) / page.height);
-      return { x, y, width: clamp((l.right - page.left) / page.width) - x, height: clamp((l.bottom - page.top) / page.height) - y };
-    }).filter(r => r.width > 0 && r.height > 0);
+    const pages = [...this.active].flatMap(slot => slot.text ? [{ number: slot.number, el: slot.el, textLayer: slot.text.el }] : []);
+    return selectedPassages(this.contentEl.ownerDocument, pages);
   }
 
   private showSelectionPopup(at: PopupAnchor): void {
@@ -1247,44 +1122,16 @@ export class ReaderView extends FileView {
   async openOutline(): Promise<void> {
     const pdf = this.pdf;
     if (!pdf) return;
-    const outline = await pdf.getOutline().catch(() => null);
-    if (!outline?.length) { this.toast("This PDF has no table of contents."); return; }
-    const nodes: OutlineNode[] = [];
-    const targets: Promise<{ page: number; offset: number } | null>[] = [];
-    const walk = (items: readonly PdfOutlineItem[], depth: number, parent: number | null) => {
-      for (const item of items) {
-        const node: OutlineNode = { id: nodes.length, title: item.title.trim() || "Untitled", depth, parent, children: [] };
-        nodes.push(node);
-        targets.push(this.resolveDestination(pdf, item.dest).catch(() => null));
-        if (parent !== null) nodes[parent]!.children.push(node.id);
-        if (item.items.length) walk(item.items, depth + 1, node.id);
-      }
-    };
-    walk(outline, 0, null);
-    const resolved = await Promise.all(targets);
-    resolved.forEach((target, id) => { nodes[id]!.page = target?.page; });
+    const outline = await loadOutline(pdf, dest => this.destinationTarget(pdf, dest));
+    if (!outline) { this.toast("This PDF has no table of contents."); return; }
     if (pdf !== this.pdf) return;
-    // The section being read is the last one that starts on or before the current page.
-    let current: number | null = null;
-    for (const node of nodes) if (node.page !== undefined && node.page <= this.page && (current === null || node.page >= nodes[current]!.page!)) current = node.id;
-    new OutlineModal(this.app, nodes, current, node => {
-      const target = resolved[node.id];
+    new OutlineModal(this.app, outline.nodes, currentSection(outline.nodes, this.page), node => {
+      const target = outline.targets[node.id];
       if (target && pdf === this.pdf) this.navigateToPage(target.page, target.offset);
     }).open();
   }
 
-  private async resolveDestination(pdf: PDFDocumentProxy, dest: string | unknown[] | null): Promise<{ page: number; offset: number } | null> {
-    const explicit: unknown = typeof dest === "string" ? await pdf.getDestination(dest) : dest;
-    if (!Array.isArray(explicit)) return null;
-    const destination: unknown[] = explicit;
-    const ref = destination[0];
-    if (typeof ref !== "number" && !isPdfReference(ref)) return null;
-    const index = typeof ref === "number" ? ref : await pdf.getPageIndex(ref).catch(() => null);
-    if (index === null) return null;
-    const slot = this.slots[index];
-    // XYZ destinations carry a top coordinate in PDF space, measured from the bottom of the page.
-    const mode = destination[1];
-    const top = typeof mode === "object" && mode !== null && "name" in mode && mode.name === "XYZ" && typeof destination[3] === "number" ? destination[3] : null;
-    return { page: index + 1, offset: top !== null && slot ? Math.max(0, Math.min(1, (slot.height - top) / slot.height)) : 0 };
+  private destinationTarget(pdf: PDFDocumentProxy, dest: PdfDestination): Promise<PageTarget | null> {
+    return resolveDestination(pdf, dest, index => this.slots[index]?.height);
   }
 }
