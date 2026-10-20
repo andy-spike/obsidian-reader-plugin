@@ -32,6 +32,6 @@
     <span class="reader-search-status" role="status">{query ? status : ""}</span>
     <IconButton icon="chevron-up" label="Previous match (Shift+Enter)" disabled={!query.trim()} onclick={() => next(true)} />
     <IconButton icon="chevron-down" label="Next match (Enter)" disabled={!query.trim()} onclick={() => next()} />
-    <IconButton icon="x" label="Close search (Escape)" onclick={close} />
+    <IconButton icon="x" label="Close (Esc)" onclick={close} />
   </div>
 {/if}

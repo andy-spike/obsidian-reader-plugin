@@ -168,7 +168,7 @@ export class ReaderView extends FileView {
     contentEl.empty();
     contentEl.addClass("reader-view");
     // Each action is placed before the previous one, so they show in the reverse of this order.
-    const noteAction = this.addAction("notebook-pen", "Toggle book note (A)", () => this.host.toggleAnnotations());
+    const noteAction = this.addAction("notebook-pen", "Book note (A)", () => this.host.toggleAnnotations());
     // Right-click opens the note in either place this once, whatever the setting says.
     noteAction.addEventListener("contextmenu", event => {
       event.preventDefault();
@@ -1105,8 +1105,7 @@ export class ReaderView extends FileView {
     this.pageColorsAction.toggleClass("is-active", dark);
     this.pageColorsAction.setAttribute("aria-pressed", String(dark));
     const now = dark ? "Dark pages" : "Original colors";
-    const next = own ? "use the general setting" : dark ? "show original colors" : "show dark pages";
-    this.pageColorsAction.setAttribute("aria-label", `${now}${own ? " for this PDF" : ""}. Click to ${next}. Right-click for more choices.`);
+    this.pageColorsAction.setAttribute("aria-label", `${now}${own ? " (this PDF)" : ""}`);
   }
 
   /** Highlight mode's color, or the first color if the chosen one was removed. */
@@ -1121,7 +1120,7 @@ export class ReaderView extends FileView {
     this.modeAction.toggleClass("is-active", on);
     this.modeAction.style.setProperty("--reader-mode-color", color.value);
     this.modeAction.setAttribute("aria-pressed", String(on));
-    this.modeAction.setAttribute("aria-label", `${on ? "Highlight mode is on" : "Turn on highlight mode"}: selecting text highlights it in ${color.name}. Right-click to choose the color. (H)`);
+    this.modeAction.setAttribute("aria-label", `Highlight mode ${on ? "on" : "off"} (H)`);
   }
 
   private async persist(): Promise<void> {
