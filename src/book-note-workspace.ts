@@ -19,9 +19,11 @@ export class ObsidianBookNoteWorkspace implements BookNoteWorkspace {
     return this.app.workspace.getLeavesOfType(READER_VIEW).map(leaf => leaf.view).filter((view): view is ReaderView => view instanceof ReaderView);
   }
 
-  find(place: NotePlace): WorkspaceLeaf | null {
+  find(place: NotePlace, reader?: ReaderView | null): WorkspaceLeaf | null {
     const workspace = this.app.workspace;
-    const samePlace = (leaf: WorkspaceLeaf) => (this.inSidebar(leaf) ? "sidebar" : "beside") === place;
+    // A tab beside the PDF must occupy a different tab group, otherwise revealing it hides the PDF.
+    const samePlace = (leaf: WorkspaceLeaf) => place === "sidebar" ? this.inSidebar(leaf)
+      : !this.inSidebar(leaf) && (!reader || leaf.parent !== reader.leaf.parent);
     let found = workspace.getLeavesOfType(ANNOTATIONS_VIEW).find(samePlace) ?? null;
     if (!found) workspace.iterateAllLeaves(leaf => {
       const state = leaf.getViewState();

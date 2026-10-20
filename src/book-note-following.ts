@@ -8,7 +8,7 @@ import type { NotePlace, ReaderSettings } from "./settings";
 export interface BookNoteWorkspace {
   isCurrent(reader: ReaderView): boolean;
   readers(): ReaderView[];
-  find(place: NotePlace): WorkspaceLeaf | null;
+  find(place: NotePlace, reader?: ReaderView | null): WorkspaceLeaf | null;
   create(place: NotePlace, reader: ReaderView | null): WorkspaceLeaf | null;
   display(leaf: WorkspaceLeaf, record: AnnotationRecord | null): Promise<void>;
   visible(leaf: WorkspaceLeaf): boolean;
@@ -62,7 +62,7 @@ export class BookNoteFollowing {
 
   toggle(place: NotePlace = this.settings().notePlace): Promise<void> {
     return this.serial(async () => {
-      const leaf = this.workspace.find(place);
+      const leaf = this.workspace.find(place, this.reader);
       if (leaf && this.workspace.visible(leaf)) {
         this.dismissed = true;
         this.workspace.dismiss(leaf);
@@ -87,7 +87,7 @@ export class BookNoteFollowing {
   private update(): Promise<void> {
     return this.serial(async () => {
       for (const place of ["sidebar", "beside"] as const) {
-        if (this.workspace.find(place)) await this.display(this.reader, false, place);
+        if (this.workspace.find(place, this.reader)) await this.display(this.reader, false, place);
       }
     });
   }
@@ -98,7 +98,7 @@ export class BookNoteFollowing {
 
   private async display(reader: ReaderView | null, reveal: boolean, place: NotePlace): Promise<WorkspaceLeaf | null> {
     if (this.closed) return null;
-    const leaf = this.workspace.find(place) ?? this.workspace.create(place, reader);
+    const leaf = this.workspace.find(place, reader) ?? this.workspace.create(place, reader);
     if (!leaf) return null;
     await this.workspace.display(leaf, reader?.getRecord() ?? null);
     if (reveal && !this.closed) await this.workspace.reveal(leaf);
