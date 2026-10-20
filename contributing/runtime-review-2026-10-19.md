@@ -21,6 +21,17 @@ Two further issues surfaced while verifying these changes and were fixed:
 
 The production runtime also passed a regression check for normal selection, highlighting, recoloring, copying, deletion, and Undo. Undo was clicked after Obsidian's notice slide-in completed. A full headless Obsidian stop/start restored Reader and its annotations, and search worked again after startup. Build and lint passed with zero Svelte/TypeScript errors or warnings. The UI detector found only the pre-existing colored quote-callout border, which this task preserves.
 
+### Code review follow-up
+
+A review of the branch found six search and history defects. All were fixed and checked in the production build:
+
+- **Ligature offsets:** The text layer now keeps raw PDF text, as PDF.js's find controller does, so match offsets line up with the displayed text. In `QA search review.pdf`, `cat` after `ﬁnd` is marked exactly. Because raw text can contain ligatures, saved quotes, their context, and native copies now go through PDF.js's `normalizeUnicode`. A real drag over `ﬁnd cat` saved `find cat` in the JSON record, the book note, and the quote note name; Ctrl/Cmd+C copied `find cat`.
+- **Measuring before scrolling:** Marks for a page are measured first and the current result is revealed afterwards. Both lines of the `line match` result were marked over the right words.
+- **Repeated results:** A one-result search scrolled 1,500 px away and Enter brought the result back into view.
+- **Fitted history:** Back recomputes Fit width or Fit page for the current pane. After following a jump at Fit width, splitting the pane, and pressing Back, zoom was 0.511 (the narrow pane's fit), with no horizontal overflow, instead of the old 1.097.
+- **Redraw scope:** Match updates redraw only their page. Searching `About the Author` in the 1,108-page book produced 1,110 match events but only 11 page redraws, and still jumped from page 300 to page 1106.
+- **Reopening search:** Escape removed all marks; Ctrl/Cmd+F restored them with the same current result and count.
+
 Follow-up screenshots are kept locally in `.dev-vault/qa-evidence/` alongside the initial evidence. The original findings below remain as the reproduction record.
 
 ## Findings

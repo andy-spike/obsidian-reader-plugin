@@ -16,7 +16,6 @@ export class PdfSearch {
     focus(): Promise<void>; update(message: string): void; hide(): void; reset(): void;
   }>>;
   private query = "";
-  private selected = "";
   private revealMatch = false;
   private open = false;
 
@@ -32,17 +31,25 @@ export class PdfSearch {
     } });
     this.events.on("updatefindcontrolstate", (event: { state: number; matchesCount: { current: number; total: number } }) => {
       const { current, total } = event.matchesCount;
+      // A wrapped or repeated result still needs revealing, even when its index did not change.
+      if (this.open && this.query.trim() && (event.state === FindState.FOUND || event.state === FindState.WRAPPED)) this.revealMatch = true;
       this.ui.update(event.state === FindState.PENDING ? "Searching…" : event.state === FindState.NOT_FOUND ? "No matches" : `${current} of ${total}`);
     });
     this.events.on("updatefindmatchescount", (event: { matchesCount: { current: number; total: number } }) => {
       const { current, total } = event.matchesCount;
       this.ui.update(total ? `${current} of ${total}` : "No matches");
     });
-    this.events.on("updatetextlayermatches", () => {
-      const match = this.controller.selected;
-      const selected = `${match?.pageIdx}:${match?.matchIdx}`;
-      if (selected !== this.selected) { this.selected = selected; this.revealMatch = true; }
-      for (const [page, content] of this.pages) this.draw(page, content);
+    this.events.on("updatetextlayermatches", (event: { pageIndex: number }) => {
+      let selectedMark: HTMLElement | null = null;
+      if (event.pageIndex === -1) {
+        for (const [page, content] of this.pages) selectedMark = this.draw(page, content) ?? selectedMark;
+      } else {
+        const pageNumber = event.pageIndex + 1;
+        const content = this.pages.get(pageNumber);
+        if (content) selectedMark = this.draw(pageNumber, content);
+      }
+      // Scrolling earlier would invalidate viewport measurements for the remaining marks and pages.
+      this.reveal(selectedMark);
     });
   }
 
@@ -51,7 +58,12 @@ export class PdfSearch {
     this.controller.setDocument(pdf);
   }
 
-  focus(): void { this.open = true; void this.ui.focus(); }
+  focus(): void {
+    const reopening = !this.open;
+    this.open = true;
+    void this.ui.focus();
+    if (reopening && this.query.trim()) this.dispatchFind("highlightallchange");
+  }
 
   next(previous = false): void {
     if (!this.query.trim()) { this.focus(); return; }
@@ -61,8 +73,12 @@ export class PdfSearch {
 
   private find(query: string, previous: boolean, again: boolean): void {
     this.query = query;
+    this.dispatchFind(again ? "again" : "", previous);
+  }
+
+  private dispatchFind(type: "" | "again" | "highlightallchange", previous = false): void {
     this.events.dispatch("find", {
-      source: this, type: again ? "again" : "", query,
+      source: this, type, query: this.query,
       caseSensitive: false, entireWord: false, highlightAll: true,
       findPrevious: previous, matchDiacritics: false,
     });
@@ -70,6 +86,7 @@ export class PdfSearch {
 
   close(): void {
     this.open = false;
+    this.revealMatch = false;
     this.ui.hide();
     this.events.dispatch("findbarclose", { source: this });
     for (const content of this.pages.values()) content.page.querySelector(".reader-search-marks")?.remove();
@@ -77,7 +94,7 @@ export class PdfSearch {
 
   reset(): void {
     this.close();
-    this.query = this.selected = "";
+    this.query = "";
     // PDF.js accepts null to cancel extraction and discard the previous document's matches.
     this.controller.setDocument(null as unknown as PDFDocumentProxy);
     this.links.setDocument(null);
@@ -88,20 +105,19 @@ export class PdfSearch {
   attach(pageNumber: number, page: HTMLElement, text: TextLayer): void {
     const content = { page, text };
     this.pages.set(pageNumber, content);
-    this.draw(pageNumber, content);
+    this.reveal(this.draw(pageNumber, content));
   }
 
   detach(pageNumber: number): void { this.pages.delete(pageNumber); }
 
-  private draw(pageNumber: number, { page, text }: SearchPage): void {
+  private draw(pageNumber: number, { page, text }: SearchPage): HTMLElement | null {
     page.querySelector(".reader-search-marks")?.remove();
-    if (!this.open || !this.query.trim() || !this.controller.highlightMatches) return;
+    if (!this.open || !this.query.trim() || !this.controller.highlightMatches) return null;
     const matches = (this.controller.pageMatches?.[pageNumber - 1] as number[] | undefined) ?? [];
     const lengths = (this.controller.pageMatchesLength?.[pageNumber - 1] as number[] | undefined) ?? [];
-    if (!matches.length) return;
-    const layer = page.createDiv({ cls: "reader-search-marks" });
+    if (!matches.length) return null;
     const bounds = page.getBoundingClientRect();
-    if (!bounds.width || !bounds.height) return;
+    if (!bounds.width || !bounds.height) return null;
     const selected = this.controller.selected;
     const doc = page.ownerDocument;
     let offset = 0;
@@ -110,6 +126,7 @@ export class PdfSearch {
       offset += text.textContentItemsStr[index]?.length ?? 0;
       return { element, start, end: offset };
     });
+    const measured: { rect: DOMRect; active: boolean }[] = [];
     matches.forEach((start, matchIndex) => {
       const end = start + (lengths[matchIndex] ?? 0);
       const active = selected?.pageIdx === pageNumber - 1 && selected.matchIdx === matchIndex;
@@ -118,16 +135,24 @@ export class PdfSearch {
         const range = doc.createRange();
         range.setStart(run.element.firstChild, Math.max(0, start - run.start));
         range.setEnd(run.element.firstChild, Math.min(run.end, end) - run.start);
-        for (const rect of Array.from(range.getClientRects())) {
-          const mark = layer.createDiv({ cls: active ? "reader-search-mark is-current" : "reader-search-mark" });
-          mark.setCssProps({ left: `${(rect.left - bounds.left) / bounds.width * 100}%`, top: `${(rect.top - bounds.top) / bounds.height * 100}%`, width: `${rect.width / bounds.width * 100}%`, height: `${rect.height / bounds.height * 100}%` });
-          if (active && this.revealMatch) {
-            this.revealMatch = false;
-            this.controller.scrollMatchIntoView({ element: mark, pageIndex: pageNumber - 1, matchIndex });
-          }
-        }
+        for (const rect of Array.from(range.getClientRects())) measured.push({ rect, active });
       }
     });
+    const layer = page.createDiv({ cls: "reader-search-marks" });
+    let selectedMark: HTMLElement | null = null;
+    for (const { rect, active } of measured) {
+      const mark = layer.createDiv({ cls: active ? "reader-search-mark is-current" : "reader-search-mark" });
+      mark.setCssProps({ left: `${(rect.left - bounds.left) / bounds.width * 100}%`, top: `${(rect.top - bounds.top) / bounds.height * 100}%`, width: `${rect.width / bounds.width * 100}%`, height: `${rect.height / bounds.height * 100}%` });
+      if (active && !selectedMark) selectedMark = mark;
+    }
+    return selectedMark;
+  }
+
+  private reveal(mark: HTMLElement | null): void {
+    const selected = this.controller.selected;
+    if (!mark || !this.revealMatch || !selected || selected.pageIdx < 0 || selected.matchIdx < 0) return;
+    this.revealMatch = false;
+    this.controller.scrollMatchIntoView({ element: mark, pageIndex: selected.pageIdx, matchIndex: selected.matchIdx });
   }
 
   destroy(): void { this.reset(); void unmount(this.ui); }

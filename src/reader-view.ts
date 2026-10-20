@@ -4,7 +4,7 @@ import { Annotation, AnnotationRecord, AnnotationStore, fingerprint, Rect } from
 import type { ReadingPosition } from "./reading-state";
 import type { NotePlace } from "./settings";
 import { AnnotationPopup, PopupAnchor } from "./annotation-popup";
-import { loadPdf, PasswordResponses, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
+import { loadPdf, PasswordResponses, readableText, PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderingCancelledException, RenderTask, TextLayer } from "./pdf-engine";
 import { colorOf, type HighlightColor, ReaderSettings } from "./settings";
 import { PAGE_COLOR_CHOICES, type PageColors, showsDarkPages, toggledChoice } from "./page-colors";
 import { checkMenu, colorMenu, deleteAnnotation } from "./ui";
@@ -222,6 +222,13 @@ export class ReaderView extends FileView {
     this.register(() => void unmount(this.compatibility));
 
     this.registerDomEvent(this.stage, "scroll", () => this.scheduleUpdate());
+    // The text layer keeps raw PDF text so search offsets line up; copies get readable text, as in PDF.js's viewer.
+    this.registerDomEvent(this.stage, "copy", event => {
+      const selection = this.stage.ownerDocument.getSelection();
+      if (!selection || selection.isCollapsed || !event.clipboardData) return;
+      event.preventDefault();
+      event.clipboardData.setData("text/plain", readableText(selection.toString()));
+    });
     this.registerDomEvent(this.stage, "wheel", event => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
@@ -510,7 +517,7 @@ export class ReaderView extends FileView {
     const target = source.pop();
     if (!target) return;
     (forward ? this.backLocations : this.forwardLocations).push(this.passageLocation());
-    this.setZoom(target.zoom, target.fit);
+    this.setZoom(target.fit ? this.fitZoom(target.fit) : target.zoom, target.fit);
     this.goToPage(target.page, target.offset);
     this.updateControls();
   }
@@ -655,7 +662,8 @@ export class ReaderView extends FileView {
       this.revealIfDrawn();
       if (slot.text) slot.text.layer.update({ viewport });
       else {
-        const content = await page.getTextContent();
+        // Match the find controller's raw-text offsets, including ligatures and compatibility characters.
+        const content = await page.getTextContent({ disableNormalization: true });
         if (stale()) return;
         const el = slot.el.createDiv({ cls: "textLayer" });
         const layer = new TextLayer({ textContentSource: content, container: el, viewport });
@@ -1041,14 +1049,15 @@ export class ReaderView extends FileView {
       // Offsets count text only. The quote keeps PDF.js line breaks so words on adjacent lines stay apart.
       const fragment = part.cloneContents();
       fragment.querySelectorAll("br").forEach(br => br.replaceWith("\n"));
-      const exact = (fragment.textContent ?? raw).trim();
+      // The raw text layer can contain ligatures such as "ﬁ"; quotes store the readable form.
+      const exact = readableText((fragment.textContent ?? raw).trim());
       const before = doc.createRange();
       before.setStart(layer, 0);
       before.setEnd(part.startContainer, part.startOffset);
       const start = before.toString().length, end = start + raw.length;
       const full = layer.textContent ?? "";
       const rects = this.lineRects(part, layer, slot.el.getBoundingClientRect());
-      if (rects.length) passages.push({ page: slot.number, quote: { exact, prefix: full.slice(Math.max(0, start - 48), start), suffix: full.slice(end, end + 48) }, position: { start, end }, rects });
+      if (rects.length) passages.push({ page: slot.number, quote: { exact, prefix: readableText(full.slice(Math.max(0, start - 48), start)), suffix: readableText(full.slice(end, end + 48)) }, position: { start, end }, rects });
     }
     return passages;
   }

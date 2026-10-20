@@ -1,4 +1,4 @@
-import { getDocument, PDFWorker } from "pdfjs-dist";
+import { getDocument, normalizeUnicode, PDFWorker } from "pdfjs-dist";
 import workerSource from "pdfjs-dist/build/pdf.worker.min.mjs";
 import openJpegWasm from "pdfjs-dist/wasm/openjpeg.wasm";
 import jbig2Wasm from "pdfjs-dist/wasm/jbig2.wasm";
@@ -6,6 +6,11 @@ import qcmsWasm from "pdfjs-dist/wasm/qcms_bg.wasm";
 export { TextLayer, PasswordResponses } from "pdfjs-dist";
 export type { PDFDocumentProxy, PDFDocumentLoadingTask, PDFPageProxy, RenderTask } from "pdfjs-dist";
 export { RenderingCancelledException } from "pdfjs-dist";
+
+/** Replaces ligatures and compatibility characters with readable text, matching PDF.js's own copy behavior. */
+export function readableText(text: string): string {
+  return normalizeUnicode(text) as string;
+}
 
 // PDF.js asks for its decoders by URL. Obsidian installs only main.js, manifest.json, and styles.css,
 // so the worker answers requests under this prefix from the copies bundled into main.js.
