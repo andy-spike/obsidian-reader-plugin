@@ -1,6 +1,6 @@
 # Worktree workflow
 
-Task work happens in T3 worktrees. The main checkout stays on `main` and is not used for task edits. T3 creates each worktree, binds the conversation to it, and runs the project's setup script.
+Release preparation and publishing happen directly on `main` in the main checkout. Other task work happens in T3 worktrees. T3 creates each worktree, binds the conversation to it, and runs the project's setup script.
 
 ## Starting a task
 

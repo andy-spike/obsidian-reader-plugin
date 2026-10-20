@@ -12,7 +12,7 @@ Do not create tests unless the user explicitly requests them. Validate changes w
 
 ## Worktrees
 
-Do implementation tasks in a T3 worktree, never in the main checkout. Read `contributing/worktrees.md` before creating one. Check `t3_worktree_status` first; if the session is already attached to a worktree, continue there. Otherwise call `t3_worktree_handoff` with a unique branch, `baseRef: "main"`, `startFromOrigin: false`, and a continuation prompt. For a separately requested thread, use `t3_thread_launch` with a `worktree` workspace strategy. T3 must own the workspace binding; shell-created worktrees or changing directory do not update it. Run `pnpm worktree:setup` in the worktree and require success before editing.
+Prepare and publish releases directly on `main` in the main checkout. Read the release verification section in `contributing/development.md` before making a release. For other implementation tasks, use a T3 worktree. Read `contributing/worktrees.md` before creating one. Check `t3_worktree_status` first; if the session is already attached to a worktree, continue there. Otherwise call `t3_worktree_handoff` with a unique branch, `baseRef: "main"`, `startFromOrigin: false`, and a continuation prompt. For a separately requested thread, use `t3_thread_launch` with a `worktree` workspace strategy. T3 must own the workspace binding; shell-created worktrees or changing directory do not update it. Run `pnpm worktree:setup` in the worktree and require success before editing.
 
 When the task is complete, run `pnpm build` and commit only the task's changes with messages you write yourself. Merge into `main` or open a pull request only when the user asks.
 
