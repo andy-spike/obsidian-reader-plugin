@@ -63,7 +63,7 @@
         {/each}
       </div>
       <div class="reader-popup-divider"></div>
-      <IconButton tooltip={false} icon="notebook-pen" label="Write about it in the book note" onclick={() => actions.note()} />
+      <IconButton tooltip={false} icon="notebook-pen" label="Add note" onclick={() => actions.note()} />
       <IconButton icon="copy" label="Copy text" onclick={() => actions.copy()} />
       <IconButton tooltip={false} icon="trash-2" label="Delete highlight" class="mod-warning" onclick={() => actions.remove()} />
     </div>

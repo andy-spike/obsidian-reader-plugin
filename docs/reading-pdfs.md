@@ -34,7 +34,7 @@ The general choice is in **Settings → Reading Desk → PDF page colors**. See 
 To choose differently for one PDF, use the page colors button (the half-filled circle) in the Reader header. It is lit while dark pages show.
 
 - **Click** it to switch this PDF between dark pages and original colors. Click again to return the PDF to the general setting.
-- **Right-click** it to choose **Use the general setting**, **Always original colors**, **Follow Obsidian's color scheme**, or **Always dark pages** for this PDF.
+- **Right-click** it to choose **Default** (the general setting), **Original colors**, **Match Obsidian theme**, or **Dark pages** for this PDF.
 - The **Toggle dark pages for this PDF** command does the same as a click.
 
 A PDF keeps its choice when you rename or move it in Obsidian, and on every device that syncs the plugin's settings. Changing the general setting doesn't change PDFs that have their own choice.

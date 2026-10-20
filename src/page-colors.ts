@@ -6,9 +6,9 @@ import { isSameOrInside } from "./paths";
  */
 export type PageColors = "original" | "follow" | "inverted";
 export const PAGE_COLOR_CHOICES: { value: PageColors; name: string }[] = [
-  { value: "original", name: "Always original colors" },
-  { value: "follow", name: "Follow Obsidian's color scheme" },
-  { value: "inverted", name: "Always dark pages" },
+  { value: "original", name: "Original colors" },
+  { value: "follow", name: "Match Obsidian theme" },
+  { value: "inverted", name: "Dark pages" },
 ];
 export const DEFAULT_PAGE_COLORS: PageColors = "follow";
 
