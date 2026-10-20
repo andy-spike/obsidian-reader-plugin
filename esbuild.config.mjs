@@ -2,6 +2,7 @@ import esbuild from "esbuild";
 import esbuildSvelte from "esbuild-svelte";
 import { builtinModules } from "node:module";
 import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { deployPlugin, setupVault } from "./scripts/dev-vault.mjs";
 
 const production = process.argv.includes("production");
@@ -48,6 +49,18 @@ const context = await esbuild.context({
   conditions: ["svelte", "browser"],
   mainFields: ["svelte", "browser", "module", "main"],
   plugins: [esbuildSvelte({ compilerOptions: { css: "injected", dev: !production } }), {
+    name: "isolated-pdf-viewer-helpers",
+    setup(build) {
+      build.onLoad({ filter: /[/\\]pdf_viewer\.mjs$/ }, async args => {
+        const source = await readFile(args.path, "utf8");
+        // The distribution's viewer reads a global that Obsidian also writes with its own PDF.js version.
+        // Bind the viewer helpers to our pinned module instead, including in production and after reloads.
+        const contents = source.replace(/^const \{([\s\S]*?)\} = globalThis\.pdfjsLib;/m, 'import {$1} from "pdfjs-dist";');
+        if (contents === source) throw new Error("PDF.js viewer import changed; review its bundled-library binding.");
+        return { contents, loader: "js", resolveDir: dirname(args.path) };
+      });
+    },
+  }, {
     name: "inline-pdf-worker",
     setup(build) {
       build.onLoad({ filter: /pdf\.worker\.min\.mjs$/ }, async (args) => ({

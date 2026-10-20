@@ -1,6 +1,27 @@
 # PDF and core workflow runtime review
 
-Reviewed Reading Desk 0.1.4 at `19b051a` on Linux with Obsidian 1.14.4 and PDF.js 6.4.299. This was an exploratory runtime review, using the checkout's private `pnpm headless` Obsidian. No automated tests were added or run, and no plugin implementation was changed.
+Initially reviewed Reading Desk 0.1.4 at `19b051a` on Linux with Obsidian 1.14.4 and PDF.js 6.4.299. The initial exploratory review used the checkout's private `pnpm headless` Obsidian and made no implementation changes. The follow-up below addresses the findings. No automated tests were added or run.
+
+## Follow-up fixes and runtime verification
+
+All six findings below have been addressed. Forms use an explicit handoff to Obsidian's interactive viewer; Reader does not edit form values itself.
+
+- **Search:** Reader now has a search button and Ctrl/Cmd+F search bar, match counts, page marks, next/previous navigation, wrapping, F3 shortcuts, and an empty-result state. PDF.js performs extraction and normalization; Reader draws noninteractive search marks without modifying the selectable text. The two-page fixture found three occurrences of `passage`, moved forward/backward, wrapped through two `evidence` results, and showed `No matches` for an absent query. Closing search removed the marks. The 1,108-page book found 88 `embedding` matches and navigated from page 300 to the single `About the Author` result on page 1106.
+- **Rotated selection:** Added the PDF.js rotation transforms and its required rounding variables. Without the variables, PDF.js's inline size declarations were invalid, leaving the rotated text layer at the wrong dimensions even with the transform. Real pointer drags now select visible text on 90-, 180-, and 270-degree pages. A highlight on the 270-degree page saved the correct quote and normalized rectangle.
+- **Embedded comments:** Existing PDF annotation text now has accessible page buttons. Clicking the compatibility fixture's marker opens `Saved PDF comment: essential context.` in a native Obsidian modal. PDF content is inserted as plain text. Embedded comments remain separate from Reading Desk's own notes.
+- **Forms:** A notice identifies PDFs containing forms. Both the notice button and the field's click target open the normal viewer. Real typing in its input changed the fixture field to `Form fallback works`. Native form saving/export remains outside this verification.
+- **Passwords:** Reader prompts for the password, rejects an incorrect attempt with a fresh retry prompt, opens the two-page fixture with the correct password, and handles Escape/cancellation with a clear message and native-viewer button. Passwords are not stored in settings or notes. Cancelling did not interrupt another unlocked Reader or the next PDF opening.
+- **Beside placement:** Note lookup now excludes the PDF's own tab group when looking for a note beside it. Repeating the exact context-menu reproduction with an existing same-group book-note tab kept the PDF visible and opened the note in a different group. The no-existing-note case also works.
+- **Passage history:** Added Back/Forward controls and Alt+Left/Right for internal PDF links, outline destinations, and search navigation. Following the sample's internal link reached page 2, Back returned to page 1, and Forward returned to page 2 without switching to the normal viewer.
+
+Two further issues surfaced while verifying these changes and were fixed:
+
+- Loading tasks previously owned a shared PDFWorker implicitly. Destroying one task could interrupt another PDF opening. The plugin now owns the shared worker explicitly, and individual loading tasks release only their document. Closing many Reader tabs and cancelling password entry while opening another PDF no longer produced the worker-destruction error.
+- The distributed PDF.js viewer helpers read `globalThis.pdfjsLib`, which Obsidian also replaces with its own PDF.js 5.3.34. This broke search initialization in a production build after using the normal viewer. The build now binds those helper imports directly to the pinned PDF.js module and fails the build if the upstream import pattern changes. The production bundle was verified after opening the normal viewer and reloading the plugin; Reader opened and search worked without the initialization failure.
+
+The production runtime also passed a regression check for normal selection, highlighting, recoloring, copying, deletion, and Undo. Undo was clicked after Obsidian's notice slide-in completed. A full headless Obsidian stop/start restored Reader and its annotations, and search worked again after startup. Build and lint passed with zero Svelte/TypeScript errors or warnings. The UI detector found only the pre-existing colored quote-callout border, which this task preserves.
+
+Follow-up screenshots are kept locally in `.dev-vault/qa-evidence/` alongside the initial evidence. The original findings below remain as the reproduction record.
 
 ## Findings
 

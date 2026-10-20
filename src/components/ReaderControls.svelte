@@ -1,16 +1,16 @@
 <script lang="ts" module>
-  export interface ControlsState { page: number; total: number; atStart: boolean; zoom: number; canZoomOut: boolean; canZoomIn: boolean; fitWidth: boolean }
+  export interface ControlsState { page: number; total: number; atStart: boolean; zoom: number; canZoomOut: boolean; canZoomIn: boolean; fitWidth: boolean; canBack: boolean; canForward: boolean }
 </script>
 
 <script lang="ts">
   import IconButton from "./IconButton.svelte";
   import { tooltip } from "./obsidian";
 
-  interface Props { step: (delta: 1 | -1) => void; goToPage: (page: number) => void; done: () => void; zoomBy: (direction: 1 | -1) => void; zoomMenu: (anchor: DOMRect) => void; reset: () => void }
-  let { step, goToPage, done, zoomBy, zoomMenu, reset }: Props = $props();
+  interface Props { step: (delta: 1 | -1) => void; goToPage: (page: number) => void; done: () => void; zoomBy: (direction: 1 | -1) => void; zoomMenu: (anchor: DOMRect) => void; reset: () => void; back: () => void; forward: () => void }
+  let { step, goToPage, done, zoomBy, zoomMenu, reset, back, forward }: Props = $props();
   const id = $props.id();
 
-  let current = $state<ControlsState>({ page: 1, total: 0, atStart: true, zoom: 1, canZoomOut: true, canZoomIn: true, fitWidth: false });
+  let current = $state<ControlsState>({ page: 1, total: 0, atStart: true, zoom: 1, canZoomOut: true, canZoomIn: true, fitWidth: false, canBack: false, canForward: false });
   /** What the reader types into the page field. It replaces the current page only while the field has focus. */
   let typed = $state<string | null>(null);
 
@@ -26,6 +26,9 @@
 </script>
 
 <div class="reader-controls" role="toolbar">
+  <IconButton icon="arrow-left" label="Back to previous passage (Alt+Left)" disabled={!current.canBack} onclick={back} />
+  <IconButton icon="arrow-right" label="Forward to next passage (Alt+Right)" disabled={!current.canForward} onclick={forward} />
+  <div class="reader-controls-divider"></div>
   <IconButton icon="chevron-up" label="Previous page" disabled={!current.total || current.atStart} onclick={() => step(-1)} />
   <label class="reader-visually-hidden" for="reader-page-{id}">Page number</label>
   <input
