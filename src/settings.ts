@@ -1,5 +1,6 @@
 import { AbstractInputSuggest, App, normalizePath, Notice, Plugin, PluginSettingTab, Scope, setIcon, Setting, SettingDefinitionItem, TFile, TFolder } from "obsidian";
 import { ANNOTATION_FOLDER } from "./annotations";
+import { ColorChoice } from "./color-choice";
 import { DEFAULT_PAGE_COLORS, isPageColors, loadPdfPageColors, PAGE_COLOR_CHOICES, PageColors } from "./page-colors";
 
 export interface HighlightColor { id: string; name: string; value: string }
@@ -110,11 +111,14 @@ export class ReaderSettingTab extends PluginSettingTab {
   /** Closing settings mid-drag cancels it, so later redraws aren't held back. */
   hide(): void {
     this.cancelDrag?.();
+    ColorChoice.closeOpen();
     super.hide();
   }
 
   update(): void {
     if (this.dragging) { this.redrawAfterDrag = true; return; }
+    // A redraw replaces the swatch the open color choice belongs to.
+    ColorChoice.closeOpen();
     super.update();
   }
 
@@ -226,11 +230,11 @@ export class ReaderSettingTab extends PluginSettingTab {
   private renderColor(row: Setting, color: HighlightColor, index: number): void {
     const { settings } = this.host;
     const fixed = index < FIXED_COLORS;
+    new ColorChoice(this.app, row.controlEl, color.value, "Change color", async value => {
+      color.value = value;
+      await this.host.saveSettings();
+    });
     row
-      .addColorPicker(picker => picker.setValue(color.value).onChange(async value => {
-        color.value = value;
-        await this.host.saveSettings();
-      }))
       .addText(text => text.setPlaceholder("Color name").setValue(color.name).onChange(async value => {
         color.name = value.trim() || "Untitled color";
         await this.host.saveSettings();
