@@ -5,7 +5,7 @@ import jbig2Wasm from "pdfjs-dist/wasm/jbig2.wasm";
 import qcmsWasm from "pdfjs-dist/wasm/qcms_bg.wasm";
 export { TextLayer, PasswordResponses } from "pdfjs-dist";
 export type { PDFDocumentProxy, PDFDocumentLoadingTask, PDFPageProxy, RenderTask } from "pdfjs-dist";
-export { RenderingCancelledException } from "pdfjs-dist";
+export { OPS, RenderingCancelledException } from "pdfjs-dist";
 
 /** Replaces ligatures and compatibility characters with readable text, matching PDF.js's own copy behavior. */
 export function readableText(text: string): string {
